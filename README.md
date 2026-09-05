@@ -26,32 +26,82 @@ Telegram session for an allowlisted user.
 
 ## One-time setup checklist
 
-1. **Supabase project** — already provisioned; migrations in
-   `supabase/migrations/` and the `telegram-auth` function in
-   `supabase/functions/telegram-auth/` are applied/deployed.
-2. **Create the Telegram bot** — via [@BotFather](https://t.me/BotFather):
+Nothing below is provisioned yet — the backend must be created from scratch
+by following these steps in order.
+
+1. **Create the Supabase project** — at
+   [supabase.com/dashboard](https://supabase.com/dashboard): New project,
+   free plan, pick a low-latency region. Note the **project ref** (the
+   `xxxxxxxxxxxx` in the project URL) and the **anon key** from
+   Project Settings → API.
+
+   ⚠️ The free plan allows only 2 active projects per organization, and this
+   project's org is currently **at that limit**. Before creating a new one
+   you must pause or delete an existing free project, upgrade the org to Pro,
+   or create the project in a different organization.
+
+2. **Install the Supabase CLI** — see
+   [supabase.com/docs/guides/cli](https://supabase.com/docs/guides/cli),
+   e.g. `npm install -g supabase` or `scoop install supabase`. Then log in:
+   ```bash
+   supabase login
+   ```
+
+3. **Link this repo to the project** — from the repo root:
+   ```bash
+   supabase link --project-ref <your-project-ref>
+   ```
+
+4. **Apply the database migrations**:
+   ```bash
+   supabase db push
+   ```
+   This applies all four files in `supabase/migrations/` in order:
+   `0001_init.sql` (tables + RLS), `0002_radio_rpc.sql` (radio timeline
+   RPCs), `0003_storage.sql` (buckets + storage policies), and
+   `0004_realtime.sql` (adds `radio_state` and `playlist_items` to the
+   `supabase_realtime` publication — without it the app receives no
+   realtime updates at all).
+
+5. **Enable anonymous sign-ins** — in the Supabase dashboard:
+   Authentication → Sign In / Providers → enable **"Allow anonymous
+   sign-ins."** This is **off by default** and the entire auth flow
+   (`src/lib/auth.ts`) depends on it: every visitor, admin or listener,
+   first signs in anonymously before `telegram-auth` runs. Nothing in the
+   app works until this is on.
+
+6. **Deploy the edge function**:
+   ```bash
+   supabase functions deploy telegram-auth
+   ```
+
+7. **Create the Telegram bot** — via [@BotFather](https://t.me/BotFather):
    `/newbot`, follow the prompts, save the bot token.
-3. **Set the bot token as a function secret** — in the Supabase dashboard,
-   under Edge Functions → `telegram-auth` → secrets, set
-   `TELEGRAM_BOT_TOKEN` to the token from step 2.
-4. **Seed the admins table** — run this in the Supabase SQL editor, using
+
+8. **Set the bot token as a function secret**:
+   ```bash
+   supabase secrets set TELEGRAM_BOT_TOKEN=<token-from-step-7>
+   ```
+   (or in the dashboard under Edge Functions → Secrets).
+
+9. **Seed the admins table** — run this in the Supabase SQL editor, using
    your own Telegram numeric user id (get it from
    [@userinfobot](https://t.me/userinfobot)):
    ```sql
    insert into admins (telegram_user_id) values (123456789);
    ```
-5. **Deploy the frontend to Cloudflare Pages** — in the Cloudflare
-   dashboard: Workers & Pages → Create → Pages → connect the
-   `staffvpn/bigunderfm` GitHub repo. Build command: `npm run build`.
-   Build output directory: `dist`. Add environment variables
-   `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (same values as
-   `.env.local`).
-6. **Point the bot at the app** — in BotFather: `/newapp` (or
-   `/mybots` → your bot → Bot Settings → Menu Button / Mini App), set the
-   Web App URL to the Cloudflare Pages domain from step 5.
-7. **Upload tracks** — open the bot in Telegram as the admin account, use
-   the hidden Library tab to upload tracks, then hit Resume in the Controls
-   tab to start the radio.
+10. **Deploy the frontend to Cloudflare Pages** — in the Cloudflare
+    dashboard: Workers & Pages → Create → Pages → connect the
+    `staffvpn/bigunderfm` GitHub repo. Build command: `npm run build`.
+    Build output directory: `dist`. Add environment variables
+    `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (the project URL and
+    anon key from step 1).
+11. **Point the bot at the app** — in BotFather: `/newapp` (or
+    `/mybots` → your bot → Bot Settings → Menu Button / Mini App), set the
+    Web App URL to the Cloudflare Pages domain from step 10.
+12. **Upload tracks** — open the bot in Telegram as the admin account, use
+    the hidden Library tab to upload tracks, then hit Resume in the Controls
+    tab to start the radio.
 
 ## Known limitations (see spec §13)
 
