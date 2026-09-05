@@ -170,3 +170,43 @@ body {
   text-transform: uppercase;
   letter-spacing: 1px;
 }
+
+.admin-library,
+.admin-radio-controls {
+  padding: 16px;
+  padding-bottom: 80px;
+}
+
+.admin-library h2,
+.admin-radio-controls h2 {
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--color-accent);
+}
+
+.admin-library__list,
+.admin-radio-controls ul {
+  list-style: none;
+  padding: 0;
+}
+
+.admin-library__list li,
+.admin-radio-controls li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--color-surface);
+  cursor: grab;
+}
+
+.admin-library button,
+.admin-radio-controls button {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-muted);
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
