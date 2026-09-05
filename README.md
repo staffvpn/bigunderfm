@@ -29,10 +29,10 @@ Telegram session for an allowlisted user.
 The backend is provisioned: Supabase project `dxkotfirmgxxhhunuvgf`
 (`bigunderfm`, `eu-west-1`) exists with all 4 migrations applied and
 `telegram-auth` deployed. The worktree's `.env.local` already has the real
-`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. Steps 1, 3, 4, 6, 7 below are
-done; **steps 5, 8, 9, 10, 11 remain** — each needs either dashboard access
-or information only the project's admins have, so no tool available to this
-assistant could complete them.
+`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. Steps 1, 3, 4, 6, 7, 9 below
+are done; **steps 5, 8, 10, 11 remain** — each needs either dashboard access
+or a Cloudflare/BotFather account only the project's owner has, so no tool
+available to this assistant could complete them.
 
 1. ~~**Create the Supabase project**~~ — done (`dxkotfirmgxxhhunuvgf`).
 
@@ -72,20 +72,14 @@ assistant could complete them.
    `TELEGRAM_BOT_TOKEN=<the token>`. **Not yet set — required before Telegram
    sign-in will work at all.**
 
-9. **Seed the admins table** — the project's designated admins are
-   **@wantedflesh** and **@Tesoneer**. The `admins` table is keyed by
-   Telegram's numeric user id, not by @username (initData is validated
-   against the numeric id), so look up each account's numeric id first —
-   easiest way is to have each person message
-   [@userinfobot](https://t.me/userinfobot) and share back the number it
-   replies with — then run this in the Supabase SQL editor:
+9. ~~**Seed the admins table**~~ — done. `@wantedflesh` (`929887068`) and
+   `@Tesoneer` (`432943377`) are both seeded in the live `admins` table.
+   More admins can be added later the same way (numeric Telegram user id,
+   looked up via [@userinfobot](https://t.me/userinfobot)), any time,
+   without a redeploy:
    ```sql
-   insert into admins (telegram_user_id) values
-     (111111111), -- @wantedflesh
-     (222222222); -- @Tesoneer
+   insert into admins (telegram_user_id) values (<numeric id>);
    ```
-   Replace both placeholder numbers with the real ids. More admins can be
-   added later the same way, any time, without a redeploy.
 10. **Deploy the frontend to Cloudflare Pages** — in the Cloudflare
     dashboard: Workers & Pages → Create → Pages → connect the
     `staffvpn/bigunderfm` GitHub repo. Build command: `npm run build`.
