@@ -5,6 +5,12 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const MAX_INIT_DATA_AGE_SECONDS = 86400 // 24 hours
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 async function hmacSha256(key: BufferSource, data: string): Promise<ArrayBuffer> {
   const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
   return crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(data))
@@ -48,24 +54,37 @@ async function verifyInitData(
 }
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: CORS_HEADERS })
+  }
+
   try {
     const { initData } = await req.json()
 
     if (!initData) {
-      return new Response(JSON.stringify({ error: 'initData is required' }), { status: 400 })
+      return new Response(JSON.stringify({ error: 'initData is required' }), {
+        status: 400,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      })
     }
 
     const authHeader = req.headers.get('Authorization') ?? ''
     const accessToken = authHeader.replace(/^Bearer\s+/i, '')
     if (!accessToken) {
-      return new Response(JSON.stringify({ error: 'missing Authorization header' }), { status: 401 })
+      return new Response(JSON.stringify({ error: 'missing Authorization header' }), {
+        status: 401,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      })
     }
 
     const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
     const { data: callerData, error: callerError } = await adminClient.auth.getUser(accessToken)
     if (callerError || !callerData.user) {
-      return new Response(JSON.stringify({ error: 'invalid session' }), { status: 401 })
+      return new Response(JSON.stringify({ error: 'invalid session' }), {
+        status: 401,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      })
     }
     const userId = callerData.user.id
 
@@ -73,7 +92,7 @@ Deno.serve(async (req) => {
     if (!valid || !telegramUserId) {
       return new Response(JSON.stringify({ isAdmin: false }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
       })
     }
 
@@ -85,18 +104,22 @@ Deno.serve(async (req) => {
 
     const isAdmin = Boolean(adminRow)
 
-    if (isAdmin) {
-      await adminClient.auth.admin.updateUserById(userId, {
-        app_metadata: { is_admin: true },
-      })
-    }
+    // Always write the current value, never only `true`: sessions are now
+    // persistent (see src/lib/auth.ts), so an admin removed from the `admins`
+    // table must have their stale `is_admin` claim cleared on the next call.
+    await adminClient.auth.admin.updateUserById(userId, {
+      app_metadata: { is_admin: isAdmin },
+    })
 
     return new Response(JSON.stringify({ isAdmin }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
     })
   } catch (err) {
     console.error(err)
-    return new Response(JSON.stringify({ error: 'internal error' }), { status: 500 })
+    return new Response(JSON.stringify({ error: 'internal error' }), {
+      status: 500,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    })
   }
 })
