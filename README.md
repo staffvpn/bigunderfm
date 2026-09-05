@@ -84,12 +84,20 @@ by following these steps in order.
    ```
    (or in the dashboard under Edge Functions → Secrets).
 
-9. **Seed the admins table** — run this in the Supabase SQL editor, using
-   your own Telegram numeric user id (get it from
-   [@userinfobot](https://t.me/userinfobot)):
+9. **Seed the admins table** — the project's designated admins are
+   **@wantedflesh** and **@Tesoneer**. The `admins` table is keyed by
+   Telegram's numeric user id, not by @username (initData is validated
+   against the numeric id), so look up each account's numeric id first —
+   easiest way is to have each person message
+   [@userinfobot](https://t.me/userinfobot) and share back the number it
+   replies with — then run this in the Supabase SQL editor:
    ```sql
-   insert into admins (telegram_user_id) values (123456789);
+   insert into admins (telegram_user_id) values
+     (111111111), -- @wantedflesh
+     (222222222); -- @Tesoneer
    ```
+   Replace both placeholder numbers with the real ids. More admins can be
+   added later the same way, any time, without a redeploy.
 10. **Deploy the frontend to Cloudflare Pages** — in the Cloudflare
     dashboard: Workers & Pages → Create → Pages → connect the
     `staffvpn/bigunderfm` GitHub repo. Build command: `npm run build`.
