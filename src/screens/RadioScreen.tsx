@@ -193,36 +193,77 @@ export function RadioScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function handlePlayClick() {
+  // Shared by the play button AND the Media Session action handlers below
+  // (lock screen / notification shade play-pause) — both just express a
+  // desired playing/paused intent, so they go through the same path
+  // rather than each reimplementing it slightly differently.
+  function setPlaybackIntent(playing: boolean) {
     const audio = audioRef.current
     if (!audio) return
 
-    // Must run synchronously inside this click handler, not an effect
-    // reacting to state — Safari/iOS only resumes a suspended AudioContext
-    // from within a genuine user-gesture call stack.
+    // Must run synchronously inside the originating user-gesture call
+    // stack (a click, or a Media Session action) — Safari/iOS only
+    // resumes a suspended AudioContext from within one.
     resumeAnalyser()
 
-    if (!hasInteractedRef.current) {
-      hasInteractedRef.current = true
-      isPausedRef.current = false
-      setUserStarted(true)
-      setIsPaused(false)
+    hasInteractedRef.current = true
+    isPausedRef.current = !playing
+    setUserStarted(true)
+    setIsPaused(!playing)
+    if (playing) {
       audio.play().catch(() => {})
-      return
-    }
-
-    const nextPaused = !isPausedRef.current
-    isPausedRef.current = nextPaused
-    setIsPaused(nextPaused)
-    if (nextPaused) {
-      audio.pause()
     } else {
-      audio.play().catch(() => {})
+      audio.pause()
     }
   }
 
+  function handlePlayClick() {
+    // Before the first interaction isPausedRef defaults to true, which
+    // conveniently also means "start playing" here — same toggle either way.
+    setPlaybackIntent(isPausedRef.current)
+  }
+
+  // Lock-screen / notification-shade media controls. This does NOT achieve
+  // background playback — iOS/Android suspend the WebView's JS entirely
+  // once Telegram itself is backgrounded, which stops audio regardless of
+  // Media Session, and this app has no real stream server to keep
+  // advancing the playlist even if it didn't. It only makes the
+  // already-open foreground screen show up properly in system media UI
+  // instead of not appearing there at all.
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    navigator.mediaSession.setActionHandler('play', () => setPlaybackIntent(true))
+    navigator.mediaSession.setActionHandler('pause', () => setPlaybackIntent(false))
+    return () => {
+      navigator.mediaSession.setActionHandler('play', null)
+      navigator.mediaSession.setActionHandler('pause', null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const currentEntry = position ? entries[position.trackIndex] : undefined
   const nextEntry = position && entries.length > 0 ? entries[(position.trackIndex + 1) % entries.length] : undefined
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: currentEntry?.track.title ?? 'BIGUNDER FM',
+      artist: currentEntry?.track.artist ?? '',
+      artwork: [
+        {
+          src: (currentEntry ? coverPublicUrl(currentEntry.track.coverPath) : null) ?? `${location.origin}/logo.png`,
+          sizes: '512x512',
+          type: currentEntry?.track.coverPath ? 'image/jpeg' : 'image/png',
+        },
+      ],
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentEntry?.track.id, currentEntry?.track.title, currentEntry?.track.artist, currentEntry?.track.coverPath])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    navigator.mediaSession.playbackState = userStarted && !isPaused ? 'playing' : 'paused'
+  }, [userStarted, isPaused])
 
   return (
     <div className="radio-screen">
