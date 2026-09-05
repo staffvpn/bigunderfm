@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
+import { buildTrackFilePath } from '../lib/storagePath'
 
 export function AdminLibrary() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
@@ -45,7 +46,7 @@ export function AdminLibrary() {
           continue
         }
 
-        const filePath = `${crypto.randomUUID()}-${file.name}`
+        const filePath = buildTrackFilePath(file.name)
 
         const { error: uploadError } = await supabase.storage.from('tracks').upload(filePath, file)
         if (uploadError) throw uploadError
