@@ -20,9 +20,24 @@ export function RadioScreen() {
   const [isPlaying, setIsPlaying] = useState(false)
   const [listenerCount, setListenerCount] = useState(1)
   const [userStarted, setUserStarted] = useState(false)
+  const [isPaused, setIsPaused] = useState(true)
   const audioRef = useRef<HTMLAudioElement>(null)
   const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const entriesRef = useRef<PlaylistEntry[]>([])
+
+  // hasInteractedRef/isPausedRef (not the userStarted/isPaused state below) are
+  // what applyPositionToAudio actually reads. The mount-only effect captures
+  // resync/applyPositionToAudio/scheduleNextAdvance exactly once, so any
+  // *state* they read stays frozen at its value from that first render
+  // forever — reading `userStarted` state here would always see `false`,
+  // silently auto-pausing playback on every later resync. Refs don't have
+  // this problem: the closures still hold a stable reference to the same
+  // ref object, and `.current` always reflects the latest value. The
+  // `userStarted`/`isPaused` state below exists purely so the button can
+  // re-render — calling their setters from inside the frozen closures is
+  // fine; it's only *reading* state there that would be stale.
+  const hasInteractedRef = useRef(false)
+  const isPausedRef = useRef(true)
 
   useEffect(() => {
     entriesRef.current = entries
@@ -63,11 +78,11 @@ export function RadioScreen() {
     if (!entry) return
 
     const url = trackPublicUrl(entry.track.filePath)
-    if (!audio.src.endsWith(url)) {
+    if (audio.src !== url) {
       audio.src = url
     }
     audio.currentTime = pos.offsetSeconds
-    if (playing && userStarted) {
+    if (playing && hasInteractedRef.current && !isPausedRef.current) {
       audio.play().catch(() => {})
     } else {
       audio.pause()
@@ -110,8 +125,26 @@ export function RadioScreen() {
   }, [])
 
   function handlePlayClick() {
-    setUserStarted(true)
-    audioRef.current?.play().catch(() => {})
+    const audio = audioRef.current
+    if (!audio) return
+
+    if (!hasInteractedRef.current) {
+      hasInteractedRef.current = true
+      isPausedRef.current = false
+      setUserStarted(true)
+      setIsPaused(false)
+      audio.play().catch(() => {})
+      return
+    }
+
+    const nextPaused = !isPausedRef.current
+    isPausedRef.current = nextPaused
+    setIsPaused(nextPaused)
+    if (nextPaused) {
+      audio.pause()
+    } else {
+      audio.play().catch(() => {})
+    }
   }
 
   const currentEntry = position ? entries[position.trackIndex] : undefined
@@ -140,7 +173,7 @@ export function RadioScreen() {
       />
 
       <button className="radio-screen__play" onClick={handlePlayClick}>
-        {userStarted ? '❚❚' : '▶'}
+        {userStarted && !isPaused ? '❚❚' : '▶'}
       </button>
 
       {nextEntry && (
