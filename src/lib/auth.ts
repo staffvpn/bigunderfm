@@ -11,10 +11,16 @@ export async function authenticate(): Promise<AuthResult> {
     return { isAdmin: false }
   }
 
-  const { error: signInError } = await supabase.auth.signInAnonymously()
-  if (signInError) {
-    console.error('anonymous sign-in failed', signInError)
-    return { isAdmin: false }
+  // Reuse the persisted session when there is one. Minting a fresh anonymous
+  // user on every page load would grow the auth user table without bound and
+  // burn through the free tier's MAU allowance.
+  const { data: existingSession } = await supabase.auth.getSession()
+  if (!existingSession.session) {
+    const { error: signInError } = await supabase.auth.signInAnonymously()
+    if (signInError) {
+      console.error('anonymous sign-in failed', signInError)
+      return { isAdmin: false }
+    }
   }
 
   // No userId in the body: telegram-auth derives the caller's identity from

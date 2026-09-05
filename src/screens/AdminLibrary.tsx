@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { extractTrackMetadata } from '../lib/metadata'
 import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
 
 export function AdminLibrary() {
@@ -9,7 +8,9 @@ export function AdminLibrary() {
   const [results, setResults] = useState<string[]>([])
 
   async function reload() {
-    setEntries(await fetchPlaylist())
+    // includeDisabled: the admin must still see (and be able to re-enable)
+    // disabled tracks, and reorder renumbering must cover every row.
+    setEntries(await fetchPlaylist({ includeDisabled: true }))
   }
 
   useEffect(() => {
@@ -21,6 +22,10 @@ export function AdminLibrary() {
     setUploading(true)
     const log: string[] = []
 
+    // Loaded on demand so the ID3 parser is not bundled into the listener's
+    // initial download — only an admin who actually uploads ever fetches it.
+    const { extractTrackMetadata } = await import('../lib/metadata')
+
     const { data: existing } = await supabase
       .from('playlist_items')
       .select('position')
@@ -31,6 +36,15 @@ export function AdminLibrary() {
     for (const file of Array.from(files)) {
       try {
         const meta = await extractTrackMetadata(file)
+
+        // A zero-duration track occupies no slice of the virtual timeline, so
+        // computeCurrentPosition can never land on it and it would silently
+        // become unplayable dead weight in the loop. Reject it up front.
+        if (meta.durationSeconds <= 0) {
+          log.push(`FAILED: ${file.name} (could not determine duration)`)
+          continue
+        }
+
         const filePath = `${crypto.randomUUID()}-${file.name}`
 
         const { error: uploadError } = await supabase.storage.from('tracks').upload(filePath, file)

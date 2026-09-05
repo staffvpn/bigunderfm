@@ -26,7 +26,15 @@ export function coverPublicUrl(coverPath: string | null): string | null {
   return supabase.storage.from('covers').getPublicUrl(coverPath).data.publicUrl
 }
 
-export async function fetchPlaylist(): Promise<PlaylistEntry[]> {
+/**
+ * Loads the ordered playlist. Defaults to enabled tracks only — listeners must
+ * never see or hear a disabled track. Admin screens pass
+ * `{ includeDisabled: true }` so a disabled track stays visible (and
+ * re-enableable) in the library, and so reorder renumbering covers every row.
+ */
+export async function fetchPlaylist(
+  options: { includeDisabled?: boolean } = {},
+): Promise<PlaylistEntry[]> {
   const { data, error } = await supabase
     .from('playlist_items')
     .select(
@@ -40,7 +48,7 @@ export async function fetchPlaylist(): Promise<PlaylistEntry[]> {
   }
 
   return (data as any[])
-    .filter((row) => row.tracks.is_enabled)
+    .filter((row) => options.includeDisabled || row.tracks.is_enabled)
     .map((row) => ({
       position: row.position,
       track: {
