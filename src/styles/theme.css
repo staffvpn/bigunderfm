@@ -51,12 +51,16 @@ button {
 
 .radio-screen {
   position: relative;
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
-  padding: 24px 16px 160px;
+  /* space-between spreads any leftover height across the gaps instead of
+     it all landing as unused space at the bottom — gap still guarantees a
+     minimum so nothing ever touches on a short/cramped viewport. */
+  justify-content: space-between;
+  gap: 10px;
+  padding: 20px 16px 104px;
   overflow: hidden;
 }
 
@@ -126,7 +130,7 @@ button {
 }
 
 .cover-art {
-  width: min(70vw, 280px);
+  width: min(55vw, 220px);
   aspect-ratio: 1;
   overflow: hidden;
   background: var(--color-surface);
@@ -250,11 +254,18 @@ button {
 }
 
 .radio-screen__next {
+  width: 100%;
+  max-width: 320px;
   color: var(--color-muted);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1.5px;
+  /* Never wrap to a second line — a long title wrapping is what pushed
+     this element down into the floating nav's reserved space. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .admin-library,
