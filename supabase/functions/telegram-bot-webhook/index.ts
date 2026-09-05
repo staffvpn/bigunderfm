@@ -179,7 +179,12 @@ async function processAudioMessage(message: TelegramMessage, audio: TelegramAudi
     position: await nextPlaylistPosition(),
   })
 
-  const confirmId = await sendMessage(chatId, `Готово: ${artist} — ${title}`)
+  const confirmId = await sendMessage(chatId, `✅ Готово: ${artist} — ${title}`)
+
+  // Leave the confirmation on screen long enough to actually read it
+  // before cleaning up — deleting it in the same instant it's sent means
+  // it never visibly appears at all in a real Telegram client.
+  await new Promise((resolve) => setTimeout(resolve, 4000))
 
   // Clean up after ourselves — the app's Library tab is the real place
   // to review/edit tracks from now on, not the chat.
