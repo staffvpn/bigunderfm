@@ -9,7 +9,7 @@ export function CoverArt({ coverUrl, alt }: CoverArtProps) {
       {coverUrl ? (
         <img src={coverUrl} alt={alt} className="cover-art__image" />
       ) : (
-        <div className="cover-art__placeholder">BIGUNDER FM</div>
+        <img src="/logo.png" alt="BIGUNDER FM" className="cover-art__image cover-art__placeholder" />
       )}
     </div>
   )

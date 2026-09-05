@@ -13,6 +13,8 @@ import {
 import { OnAirBadge } from '../components/OnAirBadge'
 import { ProgressBar } from '../components/ProgressBar'
 import { CoverArt } from '../components/CoverArt'
+import { Equalizer } from '../components/Equalizer'
+import { useAudioAnalyser } from '../lib/useAudioAnalyser'
 
 /** How long before a track boundary to start buffering the next file. */
 const PRELOAD_LEAD_SECONDS = 5
@@ -45,6 +47,7 @@ export function RadioScreen() {
   // fine; it's only *reading* state there that would be stale.
   const hasInteractedRef = useRef(false)
   const isPausedRef = useRef(true)
+  const { analyser, resume: resumeAnalyser } = useAudioAnalyser(audioRef)
 
   useEffect(() => {
     entriesRef.current = entries
@@ -194,6 +197,11 @@ export function RadioScreen() {
     const audio = audioRef.current
     if (!audio) return
 
+    // Must run synchronously inside this click handler, not an effect
+    // reacting to state — Safari/iOS only resumes a suspended AudioContext
+    // from within a genuine user-gesture call stack.
+    resumeAnalyser()
+
     if (!hasInteractedRef.current) {
       hasInteractedRef.current = true
       isPausedRef.current = false
@@ -242,6 +250,8 @@ export function RadioScreen() {
         {userStarted && !isPaused ? '❚❚' : '▶'}
       </button>
 
+      <Equalizer analyser={analyser} />
+
       {nextEntry && (
         <div className="radio-screen__next">
           ДАЛЬШЕ: {nextEntry.track.artist} — {nextEntry.track.title}
@@ -250,7 +260,7 @@ export function RadioScreen() {
 
       <div className="radio-screen__listeners">Слушают: {listenerCount}</div>
 
-      <audio ref={audioRef} />
+      <audio ref={audioRef} crossOrigin="anonymous" />
     </div>
   )
 }

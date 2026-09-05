@@ -21,7 +21,11 @@ export default function App() {
   }, [])
 
   if (!ready) {
-    return <div className="app-loading">BIGUNDER FM</div>
+    return (
+      <div className="app-loading">
+        <img src="/logo.png" alt="BIGUNDER FM" className="app-loading__logo" />
+      </div>
+    )
   }
 
   return (
