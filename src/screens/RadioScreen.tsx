@@ -26,7 +26,6 @@ export function RadioScreen() {
   // moves; `position` only changes on a resync, which is minutes apart.
   const [displayOffset, setDisplayOffset] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [listenerCount, setListenerCount] = useState(1)
   const [userStarted, setUserStarted] = useState(false)
   const [isPaused, setIsPaused] = useState(true)
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -157,9 +156,10 @@ export function RadioScreen() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'radio_state' }, resync)
       // playlist_items changes are edits — display only, never mid-track jumps.
       .on('postgres_changes', { event: '*', schema: 'public', table: 'playlist_items' }, refreshEntriesOnly)
-      .on('presence', { event: 'sync' }, () => {
-        setListenerCount(Math.max(1, Object.keys(channel.presenceState()).length))
-      })
+      // No presence 'sync' listener here: this client only needs to track
+      // itself as present (below) so the count is accurate elsewhere — the
+      // count itself is displayed in the admin Controls tab, see
+      // useListenerCount.ts.
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           await channel.track({ joined_at: new Date().toISOString() })
@@ -247,7 +247,14 @@ export function RadioScreen() {
       />
 
       <button className="radio-screen__play" onClick={handlePlayClick}>
-        {userStarted && !isPaused ? '❚❚' : '▶'}
+        {/* CSS-drawn shapes, not Unicode glyphs (▶ renders as a colored
+            emoji glyph on iOS instead of a plain triangle) — this way play
+            and pause are guaranteed the same visual style everywhere. */}
+        {userStarted && !isPaused ? (
+          <span className="icon-pause" />
+        ) : (
+          <span className="icon-play" />
+        )}
       </button>
 
       <Equalizer analyser={analyser} />
@@ -257,8 +264,6 @@ export function RadioScreen() {
           ДАЛЬШЕ: {nextEntry.track.artist} — {nextEntry.track.title}
         </div>
       )}
-
-      <div className="radio-screen__listeners">Слушают: {listenerCount}</div>
 
       <audio ref={audioRef} crossOrigin="anonymous" />
     </div>

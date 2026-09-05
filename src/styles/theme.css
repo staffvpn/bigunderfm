@@ -198,11 +198,13 @@ button {
 .radio-screen__play {
   width: 68px;
   height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
   border: 2px solid var(--color-accent);
   background: transparent;
   color: var(--color-accent);
-  font-size: 26px;
   cursor: pointer;
 }
 
@@ -211,8 +213,43 @@ button {
   color: var(--color-accent-ink);
 }
 
-.radio-screen__next,
-.radio-screen__listeners {
+/* CSS-drawn play/pause glyphs — deliberately not Unicode characters (▶
+   renders as a colored emoji glyph on iOS instead of a plain shape), so
+   both states are guaranteed the same flat style on every platform. */
+.icon-play {
+  width: 0;
+  height: 0;
+  margin-left: 4px;
+  border-style: solid;
+  border-width: 12px 0 12px 20px;
+  border-color: transparent transparent transparent currentColor;
+}
+
+.icon-pause {
+  position: relative;
+  width: 20px;
+  height: 24px;
+}
+
+.icon-pause::before,
+.icon-pause::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 6px;
+  height: 100%;
+  background: currentColor;
+}
+
+.icon-pause::before {
+  left: 2px;
+}
+
+.icon-pause::after {
+  right: 2px;
+}
+
+.radio-screen__next {
   color: var(--color-muted);
   font-size: 11px;
   font-weight: 700;

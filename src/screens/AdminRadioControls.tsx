@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { fetchPlaylist, fetchRadioState, type PlaylistEntry } from '../lib/tracks'
+import { useListenerCount } from '../lib/useListenerCount'
 
 export function AdminRadioControls() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
   const [isPlaying, setIsPlaying] = useState(false)
+  const listenerCount = useListenerCount()
 
   async function reload() {
     setEntries(await fetchPlaylist())
@@ -35,6 +37,7 @@ export function AdminRadioControls() {
     <div className="admin-radio-controls">
       <h2>ЭФИР</h2>
       <p>Статус: {isPlaying ? 'ИГРАЕТ' : 'ПАУЗА'}</p>
+      <p>Слушают: {listenerCount}</p>
       <button onClick={isPlaying ? handlePause : handleResume}>{isPlaying ? 'ПАУЗА' : 'ЗАПУСТИТЬ'}</button>
       <ul>
         {entries.map((entry) => (
