@@ -564,7 +564,13 @@ create table tracks (
 create table playlist_items (
   id uuid primary key default gen_random_uuid(),
   track_id uuid not null references tracks(id) on delete cascade,
-  position integer not null unique,
+  -- Not UNIQUE: the admin UI renumbers the *entire* list to 1..N on every
+  -- reorder via sequential single-row UPDATEs, which would collide with a
+  -- UNIQUE constraint on virtually any real reorder (the new position for
+  -- row A is often still held by row B until B's own update runs a moment
+  -- later). Ordering only ever reads via ORDER BY position, and any
+  -- transient duplicate self-heals as soon as the renumbering loop finishes.
+  position integer not null,
   created_at timestamptz not null default now()
 );
 
@@ -1685,8 +1691,18 @@ export function AdminLibrary() {
     const reordered = entries.filter((e) => e.position !== fromPosition).sort((a, b) => a.position - b.position)
     reordered.splice(toIndex, 0, moved)
 
+    const failures: string[] = []
     for (let i = 0; i < reordered.length; i++) {
-      await supabase.from('playlist_items').update({ position: i + 1 }).eq('track_id', reordered[i].track.id)
+      const { error } = await supabase
+        .from('playlist_items')
+        .update({ position: i + 1 })
+        .eq('track_id', reordered[i].track.id)
+      if (error) {
+        failures.push(`REORDER FAILED: ${reordered[i].track.title} (${error.message})`)
+      }
+    }
+    if (failures.length > 0) {
+      setResults(failures)
     }
     reload()
   }
