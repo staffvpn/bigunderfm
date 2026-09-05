@@ -26,19 +26,15 @@ Telegram session for an allowlisted user.
 
 ## One-time setup checklist
 
-Nothing below is provisioned yet — the backend must be created from scratch
-by following these steps in order.
+The backend is provisioned: Supabase project `dxkotfirmgxxhhunuvgf`
+(`bigunderfm`, `eu-west-1`) exists with all 4 migrations applied and
+`telegram-auth` deployed. The worktree's `.env.local` already has the real
+`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. Steps 1, 3, 4, 6, 7 below are
+done; **steps 5, 8, 9, 10, 11 remain** — each needs either dashboard access
+or information only the project's admins have, so no tool available to this
+assistant could complete them.
 
-1. **Create the Supabase project** — at
-   [supabase.com/dashboard](https://supabase.com/dashboard): New project,
-   free plan, pick a low-latency region. Note the **project ref** (the
-   `xxxxxxxxxxxx` in the project URL) and the **anon key** from
-   Project Settings → API.
-
-   ⚠️ The free plan allows only 2 active projects per organization, and this
-   project's org is currently **at that limit**. Before creating a new one
-   you must pause or delete an existing free project, upgrade the org to Pro,
-   or create the project in a different organization.
+1. ~~**Create the Supabase project**~~ — done (`dxkotfirmgxxhhunuvgf`).
 
 2. **Install the Supabase CLI** — see
    [supabase.com/docs/guides/cli](https://supabase.com/docs/guides/cli),
@@ -46,43 +42,35 @@ by following these steps in order.
    ```bash
    supabase login
    ```
+   (Optional — only needed if you want to manage this project from your own
+   machine going forward. Everything through step 7 was done without it via
+   direct Supabase tooling.)
 
-3. **Link this repo to the project** — from the repo root:
-   ```bash
-   supabase link --project-ref <your-project-ref>
-   ```
+3. ~~**Link this repo to the project**~~ — not needed unless you install the
+   CLI per step 2; project ref is `dxkotfirmgxxhhunuvgf`.
 
-4. **Apply the database migrations**:
-   ```bash
-   supabase db push
-   ```
-   This applies all four files in `supabase/migrations/` in order:
-   `0001_init.sql` (tables + RLS), `0002_radio_rpc.sql` (radio timeline
-   RPCs), `0003_storage.sql` (buckets + storage policies), and
-   `0004_realtime.sql` (adds `radio_state` and `playlist_items` to the
-   `supabase_realtime` publication — without it the app receives no
-   realtime updates at all).
+4. ~~**Apply the database migrations**~~ — done; all four files in
+   `supabase/migrations/` (`0001_init.sql`, `0002_radio_rpc.sql`,
+   `0003_storage.sql`, `0004_realtime.sql`) are applied and verified live.
 
 5. **Enable anonymous sign-ins** — in the Supabase dashboard:
    Authentication → Sign In / Providers → enable **"Allow anonymous
-   sign-ins."** This is **off by default** and the entire auth flow
-   (`src/lib/auth.ts`) depends on it: every visitor, admin or listener,
-   first signs in anonymously before `telegram-auth` runs. Nothing in the
-   app works until this is on.
+   sign-ins."** This is **off by default**, has no API/MCP toggle, and the
+   entire auth flow (`src/lib/auth.ts`) depends on it: every visitor, admin
+   or listener, first signs in anonymously before `telegram-auth` runs.
+   Nothing in the app works until this is on. **Not yet confirmed enabled —
+   check this before testing.**
 
-6. **Deploy the edge function**:
-   ```bash
-   supabase functions deploy telegram-auth
-   ```
+6. ~~**Deploy the edge function**~~ — done; `telegram-auth` is live
+   (version 1, ACTIVE) with no changes from the reviewed code.
 
-7. **Create the Telegram bot** — via [@BotFather](https://t.me/BotFather):
-   `/newbot`, follow the prompts, save the bot token.
+7. ~~**Create the Telegram bot**~~ — done; bot token has been supplied.
 
-8. **Set the bot token as a function secret**:
-   ```bash
-   supabase secrets set TELEGRAM_BOT_TOKEN=<token-from-step-7>
-   ```
-   (or in the dashboard under Edge Functions → Secrets).
+8. **Set the bot token as a function secret** — no MCP tool and no local
+   Supabase CLI can do this; set it manually in the dashboard under
+   Project Settings → Edge Functions → `telegram-auth` → Secrets:
+   `TELEGRAM_BOT_TOKEN=<the token>`. **Not yet set — required before Telegram
+   sign-in will work at all.**
 
 9. **Seed the admins table** — the project's designated admins are
    **@wantedflesh** and **@Tesoneer**. The `admins` table is keyed by
