@@ -1,0 +1,33 @@
+:root {
+  --color-bg: #0a0a0a;
+  --color-surface: #161616;
+  --color-text: #f2f2f0;
+  --color-muted: #8a8a86;
+  --color-accent: #d6ff3f;
+  --color-accent-2: #ff2e63;
+  --font-display: 'Arial Narrow', 'Helvetica Neue Condensed', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-display);
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(214, 255, 63, 0.04), transparent 40%),
+    radial-gradient(circle at 80% 60%, rgba(255, 46, 99, 0.05), transparent 40%);
+}
+
+.app-loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
