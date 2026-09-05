@@ -97,12 +97,15 @@ access no tool available to this assistant has.
       lingers in the chat. Title/artist/cover art still get edited inside
       the app afterwards, same as an app upload.
 
-      The file must be sent as an actual **Audio** attachment, not a
-      generic **File** — Telegram only reports a track's duration for the
-      Audio type, and duration is load-bearing for the shared playback
-      timeline (same reasoning as `src/lib/audioDuration.ts` on the
-      client side). Sending it as a File gets a reply asking to resend it
-      correctly instead of silently guessing a duration.
+      Telegram itself decides per file whether to classify it as a
+      playable "audio" message (with a duration) or a generic document
+      (without one) — there's no menu choice for this. mp3/m4a normally
+      come through as audio automatically; **.wav often doesn't**, and
+      duration is load-bearing for the shared playback timeline (same
+      reasoning as `src/lib/audioDuration.ts` on the client side), so a
+      file that arrives without one gets a reply asking to recode it to
+      mp3 or upload it via the app's Library tab instead, rather than the
+      bot silently guessing a duration.
 
       The webhook is already registered
       (`https://dxkotfirmgxxhhunuvgf.supabase.co/functions/v1/telegram-bot-webhook`,
