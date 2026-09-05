@@ -36,9 +36,15 @@ export default function App() {
 
       {isAdmin && (
         <nav className="app__admin-nav">
-          <button onClick={() => setTab('radio')}>Эфир</button>
-          <button onClick={() => setTab('library')}>Библиотека</button>
-          <button onClick={() => setTab('controls')}>Управление</button>
+          <button className={tab === 'radio' ? 'is-active' : ''} onClick={() => setTab('radio')}>
+            Эфир
+          </button>
+          <button className={tab === 'library' ? 'is-active' : ''} onClick={() => setTab('library')}>
+            Библиотека
+          </button>
+          <button className={tab === 'controls' ? 'is-active' : ''} onClick={() => setTab('controls')}>
+            Управление
+          </button>
         </nav>
       )}
     </div>

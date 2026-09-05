@@ -56,7 +56,7 @@ button {
   flex-direction: column;
   align-items: center;
   gap: 18px;
-  padding: 24px 16px 40px;
+  padding: 24px 16px 96px;
   overflow: hidden;
 }
 
@@ -291,28 +291,38 @@ button {
 
 .app__admin-nav {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: 14px;
+  left: 14px;
+  right: 14px;
   display: flex;
-  justify-content: space-around;
-  background: var(--color-surface);
-  border-top: 2px solid var(--color-accent);
-  padding: 10px 8px;
+  justify-content: center;
+  gap: 10px;
+  background: none;
   z-index: 2;
 }
 
 .app__admin-nav button {
+  flex: 1;
   background: none;
-  border: none;
+  border: 1.5px solid var(--color-surface-2);
+  border-radius: 0;
   color: var(--color-muted);
   font-weight: 800;
   text-transform: uppercase;
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 1px;
   cursor: pointer;
+  padding: 14px 8px;
+  box-shadow: 0 4px 0 0 var(--color-surface-2);
+}
+
+.app__admin-nav button.is-active {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  box-shadow: 0 4px 0 0 var(--color-accent);
 }
 
 .app__admin-nav button:active {
-  color: var(--color-accent);
+  transform: translateY(4px);
+  box-shadow: none;
 }
