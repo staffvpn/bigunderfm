@@ -9,7 +9,7 @@ design.
 ## Stack
 
 - Frontend: Vite + React + TypeScript, deployed on Cloudflare Pages.
-- Backend: Supabase (Postgres, Storage, Realtime, one Edge Function). No
+- Backend: Supabase (Postgres, Storage, Realtime, two Edge Functions). No
   custom server process.
 
 ## Local development
@@ -27,12 +27,12 @@ Telegram session for an allowlisted user.
 ## One-time setup checklist
 
 The backend is provisioned: Supabase project `dxkotfirmgxxhhunuvgf`
-(`bigunderfm`, `eu-west-1`) exists with all 4 migrations applied and
-`telegram-auth` deployed. The worktree's `.env.local` already has the real
-`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. Steps 1, 3, 4, 6, 7, 9 below
-are done; **steps 5, 8, 10, 11 remain** — each needs either dashboard access
-or a Cloudflare/BotFather account only the project's owner has, so no tool
-available to this assistant could complete them.
+(`bigunderfm`, `eu-west-1`) exists with all 4 migrations applied,
+`telegram-auth` and `telegram-bot-webhook` both deployed, and the bot's
+webhook registered. The worktree's `.env.local` already has the real
+`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. Steps 1, 3, 4, 6, 7, 9, 10, 11
+below are done; **step 5 and step 8 remain** — both need Supabase dashboard
+access no tool available to this assistant has.
 
 1. ~~**Create the Supabase project**~~ — done (`dxkotfirmgxxhhunuvgf`).
 
@@ -68,9 +68,10 @@ available to this assistant could complete them.
 
 8. **Set the bot token as a function secret** — no MCP tool and no local
    Supabase CLI can do this; set it manually in the dashboard under
-   Project Settings → Edge Functions → `telegram-auth` → Secrets:
-   `TELEGRAM_BOT_TOKEN=<the token>`. **Not yet set — required before Telegram
-   sign-in will work at all.**
+   Project Settings → Edge Functions → Secrets:
+   `TELEGRAM_BOT_TOKEN=<the token>`. **Not yet confirmed set — required
+   before Telegram sign-in AND bot track uploads (see below) work at all.**
+   Both `telegram-auth` and `telegram-bot-webhook` read the same secret.
 
 9. ~~**Seed the admins table**~~ — done. `@wantedflesh` (`929887068`) and
    `@Tesoneer` (`432943377`) are both seeded in the live `admins` table.
@@ -80,18 +81,34 @@ available to this assistant could complete them.
    ```sql
    insert into admins (telegram_user_id) values (<numeric id>);
    ```
-10. **Deploy the frontend to Cloudflare Pages** — in the Cloudflare
-    dashboard: Workers & Pages → Create → Pages → connect the
-    `staffvpn/bigunderfm` GitHub repo. Build command: `npm run build`.
-    Build output directory: `dist`. Add environment variables
-    `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (the project URL and
-    anon key from step 1).
-11. **Point the bot at the app** — in BotFather: `/newapp` (or
-    `/mybots` → your bot → Bot Settings → Menu Button / Mini App), set the
-    Web App URL to the Cloudflare Pages domain from step 10.
-12. **Upload tracks** — open the bot in Telegram as the admin account, use
-    the hidden Library tab to upload tracks, then hit Resume in the Controls
-    tab to start the radio.
+10. ~~**Deploy the frontend to Cloudflare Pages**~~ — done, live at
+    `https://bigunderfm.pages.dev`.
+11. ~~**Point the bot at the app**~~ — done.
+12. **Upload tracks** — two ways, both land in the same library:
+    - **In the app**: open the bot's Mini App as an admin, use the hidden
+      Library tab.
+    - **Straight in the chat** (`telegram-bot-webhook`): any of the
+      allowlisted admins can send or forward an audio file directly to the
+      bot in a private chat. The bot checks the sender's numeric Telegram
+      id against the `admins` table (silently ignores anyone else),
+      downloads the file, uploads it to Storage, inserts it into the
+      library and playlist, replies "Готово: artist — title", then
+      deletes both its own reply and the original message — nothing
+      lingers in the chat. Title/artist/cover art still get edited inside
+      the app afterwards, same as an app upload.
+
+      The file must be sent as an actual **Audio** attachment, not a
+      generic **File** — Telegram only reports a track's duration for the
+      Audio type, and duration is load-bearing for the shared playback
+      timeline (same reasoning as `src/lib/audioDuration.ts` on the
+      client side). Sending it as a File gets a reply asking to resend it
+      correctly instead of silently guessing a duration.
+
+      The webhook is already registered
+      (`https://dxkotfirmgxxhhunuvgf.supabase.co/functions/v1/telegram-bot-webhook`,
+      confirmed via `getWebhookInfo`) — nothing further to set up here
+      once step 8's secret is in place.
+    Then hit Resume in the Controls tab to start the radio.
 
 ## Known limitations (see spec §13)
 
