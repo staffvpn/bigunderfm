@@ -32,9 +32,9 @@ export default function App() {
 
       {isAdmin && (
         <nav className="app__admin-nav">
-          <button onClick={() => setTab('radio')}>Radio</button>
-          <button onClick={() => setTab('library')}>Library</button>
-          <button onClick={() => setTab('controls')}>Controls</button>
+          <button onClick={() => setTab('radio')}>Эфир</button>
+          <button onClick={() => setTab('library')}>Библиотека</button>
+          <button onClick={() => setTab('controls')}>Управление</button>
         </nav>
       )}
     </div>

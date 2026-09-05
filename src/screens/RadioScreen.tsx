@@ -230,7 +230,7 @@ export function RadioScreen() {
 
       <div className="radio-screen__track-info">
         <div className="radio-screen__artist">{currentEntry?.track.artist ?? '—'}</div>
-        <div className="radio-screen__title">{currentEntry?.track.title ?? 'Tune in...'}</div>
+        <div className="radio-screen__title">{currentEntry?.track.title ?? 'Загрузка...'}</div>
       </div>
 
       <ProgressBar
@@ -244,11 +244,11 @@ export function RadioScreen() {
 
       {nextEntry && (
         <div className="radio-screen__next">
-          NEXT: {nextEntry.track.artist} — {nextEntry.track.title}
+          ДАЛЬШЕ: {nextEntry.track.artist} — {nextEntry.track.title}
         </div>
       )}
 
-      <div className="radio-screen__listeners">{listenerCount} listening</div>
+      <div className="radio-screen__listeners">Слушают: {listenerCount}</div>
 
       <audio ref={audioRef} />
     </div>

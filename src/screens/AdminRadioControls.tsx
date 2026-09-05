@@ -33,16 +33,16 @@ export function AdminRadioControls() {
 
   return (
     <div className="admin-radio-controls">
-      <h2>RADIO</h2>
-      <p>Status: {isPlaying ? 'PLAYING' : 'PAUSED'}</p>
-      <button onClick={isPlaying ? handlePause : handleResume}>{isPlaying ? 'PAUSE' : 'RESUME'}</button>
+      <h2>ЭФИР</h2>
+      <p>Статус: {isPlaying ? 'ИГРАЕТ' : 'ПАУЗА'}</p>
+      <button onClick={isPlaying ? handlePause : handleResume}>{isPlaying ? 'ПАУЗА' : 'ЗАПУСТИТЬ'}</button>
       <ul>
         {entries.map((entry) => (
           <li key={entry.track.id}>
             <span>
               {entry.position}. {entry.track.artist} — {entry.track.title}
             </span>
-            <button onClick={() => handleSkip(entry.position)}>Skip here</button>
+            <button onClick={() => handleSkip(entry.position)}>Включить отсюда</button>
           </li>
         ))}
       </ul>

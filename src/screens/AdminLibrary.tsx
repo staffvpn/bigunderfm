@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
-import { buildTrackFilePath } from '../lib/storagePath'
+import { audioContentType, buildTrackFilePath } from '../lib/storagePath'
 
 export function AdminLibrary() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
@@ -42,13 +42,15 @@ export function AdminLibrary() {
         // computeCurrentPosition can never land on it and it would silently
         // become unplayable dead weight in the loop. Reject it up front.
         if (meta.durationSeconds <= 0) {
-          log.push(`FAILED: ${file.name} (could not determine duration)`)
+          log.push(`ОШИБКА: ${file.name} (не удалось определить длительность)`)
           continue
         }
 
         const filePath = buildTrackFilePath(file.name)
 
-        const { error: uploadError } = await supabase.storage.from('tracks').upload(filePath, file)
+        const { error: uploadError } = await supabase.storage
+          .from('tracks')
+          .upload(filePath, file, { contentType: audioContentType(file.name, file.type) })
         if (uploadError) throw uploadError
 
         let coverPath: string | null = null
@@ -76,9 +78,9 @@ export function AdminLibrary() {
           position: nextPosition++,
         })
 
-        log.push(`OK: ${meta.artist} — ${meta.title}`)
+        log.push(`ГОТОВО: ${meta.artist} — ${meta.title}`)
       } catch (err) {
-        log.push(`FAILED: ${file.name} (${(err as Error).message})`)
+        log.push(`ОШИБКА: ${file.name} (${(err as Error).message})`)
       }
     }
 
@@ -111,7 +113,7 @@ export function AdminLibrary() {
         .update({ position: i + 1 })
         .eq('track_id', reordered[i].track.id)
       if (error) {
-        failures.push(`REORDER FAILED: ${reordered[i].track.title} (${error.message})`)
+        failures.push(`ОШИБКА СОРТИРОВКИ: ${reordered[i].track.title} (${error.message})`)
       }
     }
     if (failures.length > 0) {
@@ -122,7 +124,7 @@ export function AdminLibrary() {
 
   return (
     <div className="admin-library">
-      <h2>LIBRARY</h2>
+      <h2>БИБЛИОТЕКА</h2>
       <input
         type="file"
         accept="audio/mpeg,audio/mp4,audio/wav"
@@ -130,7 +132,7 @@ export function AdminLibrary() {
         disabled={uploading}
         onChange={(e) => handleFiles(e.target.files)}
       />
-      {uploading && <p>Uploading…</p>}
+      {uploading && <p>Загрузка…</p>}
       <ul className="admin-library__results">
         {results.map((line, i) => (
           <li key={i}>{line}</li>
@@ -150,9 +152,9 @@ export function AdminLibrary() {
               {entry.position}. {entry.track.artist} — {entry.track.title}
             </span>
             <button onClick={() => handleToggle(entry.track.id, entry.track.isEnabled)}>
-              {entry.track.isEnabled ? 'Disable' : 'Enable'}
+              {entry.track.isEnabled ? 'Выключить' : 'Включить'}
             </button>
-            <button onClick={() => handleDelete(entry.track.id)}>Delete</button>
+            <button onClick={() => handleDelete(entry.track.id)}>Удалить</button>
           </li>
         ))}
       </ul>
