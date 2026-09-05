@@ -15,7 +15,13 @@ create table tracks (
 create table playlist_items (
   id uuid primary key default gen_random_uuid(),
   track_id uuid not null references tracks(id) on delete cascade,
-  position integer not null unique,
+  -- Not UNIQUE: the admin UI renumbers the *entire* list to 1..N on every
+  -- reorder via sequential single-row UPDATEs, which would collide with a
+  -- UNIQUE constraint on virtually any real reorder (the new position for
+  -- row A is often still held by row B until B's own update runs a moment
+  -- later). Ordering only ever reads via ORDER BY position, and any
+  -- transient duplicate self-heals as soon as the renumbering loop finishes.
+  position integer not null,
   created_at timestamptz not null default now()
 );
 

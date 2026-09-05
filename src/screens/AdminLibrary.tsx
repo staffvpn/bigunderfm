@@ -89,8 +89,18 @@ export function AdminLibrary() {
     const reordered = entries.filter((e) => e.position !== fromPosition).sort((a, b) => a.position - b.position)
     reordered.splice(toIndex, 0, moved)
 
+    const failures: string[] = []
     for (let i = 0; i < reordered.length; i++) {
-      await supabase.from('playlist_items').update({ position: i + 1 }).eq('track_id', reordered[i].track.id)
+      const { error } = await supabase
+        .from('playlist_items')
+        .update({ position: i + 1 })
+        .eq('track_id', reordered[i].track.id)
+      if (error) {
+        failures.push(`REORDER FAILED: ${reordered[i].track.title} (${error.message})`)
+      }
+    }
+    if (failures.length > 0) {
+      setResults(failures)
     }
     reload()
   }
