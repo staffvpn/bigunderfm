@@ -208,9 +208,14 @@ Deno.serve(async (req) => {
     if (message.audio) {
       await processAudioMessage(message, message.audio)
     } else if (message.document?.mime_type?.startsWith('audio/')) {
+      // Telegram itself decides audio vs. generic document per file —
+      // there's no menu choice for this. mp3/m4a normally come through
+      // as audio automatically; .wav in particular often doesn't, and
+      // Telegram never attaches a duration to a document either way.
       await sendMessage(
         message.chat.id,
-        'Пришли файл как "Аудио" (музыка), а не как "Файл" — иначе Telegram не передаёт длительность трека.',
+        '🚨 wav-подобное: Telegram прислал этот файл без длительности — бот не может его принять. ' +
+          'Перекодируй в mp3 и перешли ещё раз, либо загрузи через вкладку "Библиотека" в самом приложении.',
       )
     }
 
