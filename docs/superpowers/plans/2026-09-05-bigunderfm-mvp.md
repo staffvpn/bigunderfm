@@ -764,8 +764,8 @@ git commit -m "feat: add Supabase schema, RLS, and radio RPC migrations"
 - Create: `supabase/functions/telegram-auth/index.ts`
 
 **Interfaces:**
-- Consumes: `admins` table (Task 4), env vars `TELEGRAM_BOT_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
-- Produces (used by Task 7's `auth.ts`): an HTTP endpoint accepting `POST { initData: string, userId: string }`, responding `{ isAdmin: boolean }`, and — as a side effect when `isAdmin` is true — setting `app_metadata.is_admin = true` on the Supabase auth user identified by `userId`.
+- Consumes: `admins` table (Task 4), env vars `TELEGRAM_BOT_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`; the caller's own Supabase session token via the standard `Authorization: Bearer <token>` header (Supabase's client SDK attaches this automatically on `functions.invoke` calls made after `signInAnonymously()` — no manual wiring needed).
+- Produces (used by Task 7's `auth.ts`): an HTTP endpoint accepting `POST { initData: string }` (no client-supplied user id — the caller's identity is derived server-side from their own session token, so a caller can never assert admin for an account that isn't their own), responding `{ isAdmin: boolean }`, and — as a side effect when `isAdmin` is true — setting `app_metadata.is_admin = true` on the Supabase auth user that the `Authorization` header authenticates as. Also rejects `initData` whose `auth_date` is older than 24 hours, bounding how long a leaked/captured `initData` string stays usable as a replay.
 
 - [ ] **Step 1: Write `supabase/functions/telegram-auth/index.ts`**
 
@@ -775,6 +775,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+const MAX_INIT_DATA_AGE_SECONDS = 86400 // 24 hours
 
 async function hmacSha256(key: BufferSource, data: string): Promise<ArrayBuffer> {
   const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
@@ -796,6 +797,11 @@ async function verifyInitData(
   if (!hash) return { valid: false, telegramUserId: null }
   params.delete('hash')
 
+  const authDate = Number(params.get('auth_date'))
+  if (!authDate || Date.now() / 1000 - authDate > MAX_INIT_DATA_AGE_SECONDS) {
+    return { valid: false, telegramUserId: null }
+  }
+
   const dataCheckString = Array.from(params.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`)
@@ -815,11 +821,25 @@ async function verifyInitData(
 
 Deno.serve(async (req) => {
   try {
-    const { initData, userId } = await req.json()
+    const { initData } = await req.json()
 
-    if (!initData || !userId) {
-      return new Response(JSON.stringify({ error: 'initData and userId are required' }), { status: 400 })
+    if (!initData) {
+      return new Response(JSON.stringify({ error: 'initData is required' }), { status: 400 })
     }
+
+    const authHeader = req.headers.get('Authorization') ?? ''
+    const accessToken = authHeader.replace(/^Bearer\s+/i, '')
+    if (!accessToken) {
+      return new Response(JSON.stringify({ error: 'missing Authorization header' }), { status: 401 })
+    }
+
+    const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
+
+    const { data: callerData, error: callerError } = await adminClient.auth.getUser(accessToken)
+    if (callerError || !callerData.user) {
+      return new Response(JSON.stringify({ error: 'invalid session' }), { status: 401 })
+    }
+    const userId = callerData.user.id
 
     const { valid, telegramUserId } = await verifyInitData(initData, BOT_TOKEN)
     if (!valid || !telegramUserId) {
@@ -828,8 +848,6 @@ Deno.serve(async (req) => {
         headers: { 'Content-Type': 'application/json' },
       })
     }
-
-    const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
     const { data: adminRow } = await adminClient
       .from('admins')
@@ -986,14 +1004,18 @@ export async function authenticate(): Promise<AuthResult> {
     return { isAdmin: false }
   }
 
-  const { data: signInData, error: signInError } = await supabase.auth.signInAnonymously()
-  if (signInError || !signInData.user) {
+  const { error: signInError } = await supabase.auth.signInAnonymously()
+  if (signInError) {
     console.error('anonymous sign-in failed', signInError)
     return { isAdmin: false }
   }
 
+  // No userId in the body: telegram-auth derives the caller's identity from
+  // the Authorization header supabase-js attaches automatically from the
+  // session just created above — a caller can never assert admin for an
+  // account that isn't its own.
   const { data, error } = await supabase.functions.invoke('telegram-auth', {
-    body: { initData, userId: signInData.user.id },
+    body: { initData },
   })
 
   if (error || !data) {

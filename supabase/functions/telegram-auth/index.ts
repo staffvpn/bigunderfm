@@ -3,6 +3,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+const MAX_INIT_DATA_AGE_SECONDS = 86400 // 24 hours
 
 async function hmacSha256(key: BufferSource, data: string): Promise<ArrayBuffer> {
   const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
@@ -24,6 +25,11 @@ async function verifyInitData(
   if (!hash) return { valid: false, telegramUserId: null }
   params.delete('hash')
 
+  const authDate = Number(params.get('auth_date'))
+  if (!authDate || Date.now() / 1000 - authDate > MAX_INIT_DATA_AGE_SECONDS) {
+    return { valid: false, telegramUserId: null }
+  }
+
   const dataCheckString = Array.from(params.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`)
@@ -43,11 +49,25 @@ async function verifyInitData(
 
 Deno.serve(async (req) => {
   try {
-    const { initData, userId } = await req.json()
+    const { initData } = await req.json()
 
-    if (!initData || !userId) {
-      return new Response(JSON.stringify({ error: 'initData and userId are required' }), { status: 400 })
+    if (!initData) {
+      return new Response(JSON.stringify({ error: 'initData is required' }), { status: 400 })
     }
+
+    const authHeader = req.headers.get('Authorization') ?? ''
+    const accessToken = authHeader.replace(/^Bearer\s+/i, '')
+    if (!accessToken) {
+      return new Response(JSON.stringify({ error: 'missing Authorization header' }), { status: 401 })
+    }
+
+    const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
+
+    const { data: callerData, error: callerError } = await adminClient.auth.getUser(accessToken)
+    if (callerError || !callerData.user) {
+      return new Response(JSON.stringify({ error: 'invalid session' }), { status: 401 })
+    }
+    const userId = callerData.user.id
 
     const { valid, telegramUserId } = await verifyInitData(initData, BOT_TOKEN)
     if (!valid || !telegramUserId) {
@@ -56,8 +76,6 @@ Deno.serve(async (req) => {
         headers: { 'Content-Type': 'application/json' },
       })
     }
-
-    const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
     const { data: adminRow } = await adminClient
       .from('admins')
