@@ -122,17 +122,14 @@ button {
 .radio-screen__title {
   flex: 1;
   min-height: 0;
-  display: flex;
-  /* Bottom-align the text block within the flex-grown space instead of
-     leaving it pinned to the top with dead air below — this is what
-     actually makes the title reach down toward the progress bar,
-     independent of how big the font ends up being. */
-  align-items: flex-end;
-  font-size: clamp(40px, 18vw, 140px);
-  line-height: 0.9;
+  font-size: clamp(32px, 12vw, 72px);
+  line-height: 0.94;
   font-weight: 900;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   text-transform: uppercase;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
