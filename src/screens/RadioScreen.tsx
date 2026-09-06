@@ -94,23 +94,34 @@ export function RadioScreen() {
     if (!entry) return
 
     const url = trackPublicUrl(entry.track.filePath)
+    const shouldPlay = playing && hasInteractedRef.current && !isPausedRef.current
+
     if (audio.src !== url) {
       audio.src = url
       // Seeking immediately after assigning `src` is dropped by browsers that
       // haven't finished resource selection yet — defer until the media has
-      // metadata and the seek can actually land.
+      // metadata and the seek can actually land. Calling play() is deferred
+      // to the SAME callback: calling it right after assigning `src` (the
+      // previous bug here) starts playback from 0:00 immediately, then
+      // visibly/audibly jumps to the real offset once metadata loads a
+      // moment later — sounds exactly like "it restarted from the
+      // beginning" whenever that load isn't instant.
       const targetOffset = pos.offsetSeconds
       audio.addEventListener(
         'loadedmetadata',
         () => {
           audio.currentTime = targetOffset
+          if (shouldPlay) {
+            audio.play().catch(() => {})
+          }
         },
         { once: true },
       )
-    } else {
-      audio.currentTime = pos.offsetSeconds
+      return
     }
-    if (playing && hasInteractedRef.current && !isPausedRef.current) {
+
+    audio.currentTime = pos.offsetSeconds
+    if (shouldPlay) {
       audio.play().catch(() => {})
     } else {
       audio.pause()
