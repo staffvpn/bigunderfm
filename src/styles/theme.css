@@ -54,36 +54,14 @@ button {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   /* space-between spreads any leftover height across the gaps instead of
      it all landing as unused space at the bottom — gap still guarantees a
      minimum so nothing ever touches on a short/cramped viewport. */
   justify-content: space-between;
   gap: 10px;
-  padding: 20px 16px 104px;
+  padding: 20px 20px 90px;
   overflow: hidden;
-}
-
-/* Big ghost wordmark behind everything — poster/flyer background texture,
-   never competes with the actual content sitting on top of it. */
-.radio-screen::before {
-  content: 'BIGUNDER';
-  position: absolute;
-  top: -0.35em;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 22vw;
-  font-weight: 900;
-  color: transparent;
-  -webkit-text-stroke: 1px var(--color-surface-2);
-  white-space: nowrap;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.radio-screen > * {
-  position: relative;
-  z-index: 1;
 }
 
 .radio-screen__header {
@@ -104,9 +82,10 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  background: var(--color-surface);
-  border-radius: 0;
+  padding: 6px 12px;
+  background: none;
+  border: 1.5px solid var(--color-muted);
+  border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 1.5px;
@@ -117,40 +96,12 @@ button {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--color-muted);
+  background: currentColor;
 }
 
 .on-air-badge--live {
-  background: var(--color-accent);
-  color: var(--color-accent-ink);
-}
-
-.on-air-badge--live .on-air-badge__dot {
-  background: var(--color-accent-ink);
-}
-
-.cover-art {
-  width: min(55vw, 220px);
-  aspect-ratio: 1;
-  overflow: hidden;
-  background: var(--color-surface);
-  border: 2px solid var(--color-surface-2);
-}
-
-.cover-art__image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.cover-art__placeholder {
-  object-fit: contain;
-  padding: 20%;
-  opacity: 0.85;
-}
-
-.radio-screen__track-info {
-  text-align: center;
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 .radio-screen__artist {
@@ -158,25 +109,38 @@ button {
   text-transform: uppercase;
   font-size: 13px;
   font-weight: 700;
-  letter-spacing: 2px;
+  letter-spacing: 3px;
 }
 
+/* The poster-style hero — this replaced a square cover-art image
+   entirely; the track title itself is now the dominant visual. clamp()
+   keeps it bold on any screen without needing per-viewport tuning, and
+   the line-clamp caps how much vertical space an unusually long title
+   (some real titles here are compound, e.g. "AK420, BIGUNDER –
+   UNBREAKABLE") can take before it'd otherwise threaten the fixed
+   one-screen layout. */
 .radio-screen__title {
-  font-size: 24px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
+  flex: 1;
+  min-height: 0;
+  font-size: clamp(32px, 12vw, 72px);
+  line-height: 0.94;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .equalizer {
   width: 100%;
-  max-width: 320px;
-  height: 36px;
+  height: 28px;
   display: block;
 }
 
 .progress-bar {
   width: 100%;
-  max-width: 320px;
 }
 
 .progress-bar__track {
@@ -200,21 +164,21 @@ button {
 }
 
 .radio-screen__play {
-  width: 68px;
-  height: 68px;
+  align-self: center;
+  width: 72px;
+  height: 72px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  border: 2px solid var(--color-accent);
-  background: transparent;
-  color: var(--color-accent);
+  border: none;
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
   cursor: pointer;
 }
 
 .radio-screen__play:active {
-  background: var(--color-accent);
-  color: var(--color-accent-ink);
+  opacity: 0.8;
 }
 
 /* CSS-drawn play/pause glyphs — deliberately not Unicode characters (▶
@@ -255,7 +219,8 @@ button {
 
 .radio-screen__next {
   width: 100%;
-  max-width: 320px;
+  border-top: 1px solid var(--color-surface-2);
+  padding-top: 12px;
   color: var(--color-muted);
   font-size: 11px;
   font-weight: 700;
@@ -271,7 +236,7 @@ button {
 .admin-library,
 .admin-radio-controls {
   padding: 16px;
-  padding-bottom: 110px;
+  padding-bottom: 90px;
   min-height: 100vh;
   background: var(--color-bg);
 }
@@ -339,38 +304,38 @@ button {
 
 .app__admin-nav {
   position: fixed;
-  bottom: 14px;
-  left: 14px;
-  right: 14px;
+  bottom: 0;
+  left: 0;
+  right: 0;
   display: flex;
-  justify-content: center;
-  gap: 10px;
-  background: none;
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-surface-2);
+  padding: 0 8px env(safe-area-inset-bottom, 0px);
   z-index: 2;
 }
 
 .app__admin-nav button {
   flex: 1;
   background: none;
-  border: 1.5px solid var(--color-surface-2);
-  border-radius: 0;
+  border: none;
+  border-bottom: 2px solid transparent;
   color: var(--color-muted);
   font-weight: 800;
   text-transform: uppercase;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 1px;
   cursor: pointer;
-  padding: 14px 8px;
-  box-shadow: 0 4px 0 0 var(--color-surface-2);
+  /* Full-width, no gaps between tabs — deliberately a bigger tap target
+     than the boxed-button version this replaced, just without the
+     visible border/shadow chrome. */
+  padding: 16px 4px;
 }
 
 .app__admin-nav button.is-active {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-  box-shadow: 0 4px 0 0 var(--color-accent);
+  color: var(--color-text);
+  border-bottom-color: var(--color-accent);
 }
 
 .app__admin-nav button:active {
-  transform: translateY(4px);
-  box-shadow: none;
+  opacity: 0.7;
 }

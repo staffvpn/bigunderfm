@@ -12,7 +12,6 @@ import {
 } from '../lib/tracks'
 import { OnAirBadge } from '../components/OnAirBadge'
 import { ProgressBar } from '../components/ProgressBar'
-import { CoverArt } from '../components/CoverArt'
 import { Equalizer } from '../components/Equalizer'
 import { useAudioAnalyser } from '../lib/useAudioAnalyser'
 
@@ -272,15 +271,10 @@ export function RadioScreen() {
         <OnAirBadge isPlaying={isPlaying} />
       </div>
 
-      <CoverArt
-        coverUrl={currentEntry ? coverPublicUrl(currentEntry.track.coverPath) : null}
-        alt={currentEntry?.track.title ?? 'BIGUNDER FM'}
-      />
+      <div className="radio-screen__artist">{currentEntry?.track.artist ?? '—'}</div>
+      <div className="radio-screen__title">{currentEntry?.track.title ?? 'Загрузка...'}</div>
 
-      <div className="radio-screen__track-info">
-        <div className="radio-screen__artist">{currentEntry?.track.artist ?? '—'}</div>
-        <div className="radio-screen__title">{currentEntry?.track.title ?? 'Загрузка...'}</div>
-      </div>
+      <Equalizer analyser={analyser} />
 
       <ProgressBar
         offsetSeconds={displayOffset}
@@ -298,11 +292,9 @@ export function RadioScreen() {
         )}
       </button>
 
-      <Equalizer analyser={analyser} />
-
       {nextEntry && (
         <div className="radio-screen__next">
-          ДАЛЬШЕ: {nextEntry.track.artist} — {nextEntry.track.title}
+          ДАЛЬШЕ • {nextEntry.track.artist} — {nextEntry.track.title}
         </div>
       )}
 
