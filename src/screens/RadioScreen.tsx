@@ -14,7 +14,6 @@ import { OnAirBadge } from '../components/OnAirBadge'
 import { ProgressBar } from '../components/ProgressBar'
 import { Equalizer } from '../components/Equalizer'
 import { useAudioAnalyser } from '../lib/useAudioAnalyser'
-import { useFitText } from '../lib/useFitText'
 
 /** How long before a track boundary to start buffering the next file. */
 const PRELOAD_LEAD_SECONDS = 5
@@ -47,7 +46,6 @@ export function RadioScreen() {
   const hasInteractedRef = useRef(false)
   const isPausedRef = useRef(true)
   const { analyser, resume: resumeAnalyser } = useAudioAnalyser(audioRef)
-  const titleRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     entriesRef.current = entries
@@ -244,9 +242,6 @@ export function RadioScreen() {
 
   const currentEntry = position ? entries[position.trackIndex] : undefined
   const nextEntry = position && entries.length > 0 ? entries[(position.trackIndex + 1) % entries.length] : undefined
-  const titleText = currentEntry?.track.title ?? 'Загрузка...'
-
-  useFitText(titleRef, titleText)
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return
@@ -277,9 +272,7 @@ export function RadioScreen() {
       </div>
 
       <div className="radio-screen__artist">{currentEntry?.track.artist ?? '—'}</div>
-      <div className="radio-screen__title" ref={titleRef}>
-        {titleText}
-      </div>
+      <div className="radio-screen__title">{currentEntry?.track.title ?? 'Загрузка...'}</div>
 
       <Equalizer analyser={analyser} />
 

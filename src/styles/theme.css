@@ -122,14 +122,14 @@ button {
 .radio-screen__title {
   flex: 1;
   min-height: 0;
-  /* font-size is set by useFitText.ts (JS measures and shrinks it to
-     whatever this specific title actually fits without clipping) — this
-     is only the fallback shown for one frame before that runs. */
-  font-size: 72px;
+  font-size: clamp(32px, 12vw, 72px);
   line-height: 0.94;
   font-weight: 900;
   letter-spacing: -0.02em;
   text-transform: uppercase;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
