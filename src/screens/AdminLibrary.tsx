@@ -90,7 +90,20 @@ export function AdminLibrary() {
   }
 
   async function handleDelete(trackId: string) {
+    // Deleting the row alone leaves the actual audio (and cover, if any)
+    // sitting in Storage forever — it's never referenced again, but never
+    // freed either, silently eating into the project's storage quota.
+    // Remove the row first (whatever the exact Storage call outcome is,
+    // the track disappears from the library either way), then clean up
+    // both underlying files.
+    const entry = entries.find((e) => e.track.id === trackId)
     await supabase.from('tracks').delete().eq('id', trackId)
+    if (entry) {
+      await supabase.storage.from('tracks').remove([entry.track.filePath])
+      if (entry.track.coverPath) {
+        await supabase.storage.from('covers').remove([entry.track.coverPath])
+      }
+    }
     reload()
   }
 
