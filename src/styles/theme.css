@@ -250,17 +250,6 @@ button {
   font-weight: 900;
   letter-spacing: 1px;
   padding: 4px 10px;
-  margin: 0;
-}
-
-.admin-radio-controls h2 {
-  margin: 0 0 16px;
-}
-
-.admin-library__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin: 0 0 16px;
 }
 
@@ -319,19 +308,6 @@ button {
   touch-action: none;
 }
 
-.select-dot {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  border: 1.5px solid var(--color-muted);
-}
-
-.select-dot.is-selected {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-}
-
 .admin-library button,
 .admin-radio-controls button {
   background: transparent;
@@ -351,29 +327,6 @@ button {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-accent-ink);
-}
-
-.admin-library__bulkbar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
-  background: var(--color-bg);
-  border-top: 1px solid var(--color-surface-2);
-  z-index: 2;
-}
-
-/* Comes after the general .admin-library button rule in source order so
-   its bigger padding/full-width actually win at equal specificity. */
-.admin-library__bulkbar button {
-  width: 100%;
-  padding: 14px;
-}
-
-.admin-library__bulkbar button:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 
 .app__admin-nav {

@@ -7,8 +7,6 @@ export function AdminLibrary() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
   const [uploading, setUploading] = useState(false)
   const [results, setResults] = useState<string[]>([])
-  const [selectMode, setSelectMode] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   // Local-only visual order while a drag is in progress — the server only
   // hears about it once via commitOrder() on release, not on every move.
   const [dragOrderIds, setDragOrderIds] = useState<string[] | null>(null)
@@ -120,42 +118,19 @@ export function AdminLibrary() {
     reload()
   }
 
-  // Shared by the single-row Delete button and bulk select-mode delete —
-  // both need the same "row first, then its Storage files" cleanup from
-  // the orphan fix, just for a list of one or many.
-  async function deleteTracks(targets: PlaylistEntry[]) {
-    for (const entry of targets) {
-      await supabase.from('tracks').delete().eq('id', entry.track.id)
+  async function handleDelete(trackId: string) {
+    // Deleting the row alone leaves the actual audio (and cover, if any)
+    // sitting in Storage forever — it's never referenced again, but never
+    // freed either, silently eating into the project's storage quota.
+    const entry = entries.find((e) => e.track.id === trackId)
+    await supabase.from('tracks').delete().eq('id', trackId)
+    if (entry) {
       await supabase.storage.from('tracks').remove([entry.track.filePath])
       if (entry.track.coverPath) {
         await supabase.storage.from('covers').remove([entry.track.coverPath])
       }
     }
     reload()
-  }
-
-  async function handleDelete(trackId: string) {
-    const entry = entries.find((e) => e.track.id === trackId)
-    if (entry) await deleteTracks([entry])
-  }
-
-  async function handleBulkDelete() {
-    const targets = entries.filter((e) => selectedIds.has(e.track.id))
-    setSelectedIds(new Set())
-    setSelectMode(false)
-    await deleteTracks(targets)
-  }
-
-  function toggleSelected(trackId: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(trackId)) {
-        next.delete(trackId)
-      } else {
-        next.add(trackId)
-      }
-      return next
-    })
   }
 
   async function handleToggle(trackId: string, isEnabled: boolean) {
@@ -189,7 +164,6 @@ export function AdminLibrary() {
   // replaced) so dragging by the handle works on touch, not just mouse —
   // native `draggable` never fires on mobile browsers at all.
   function handleHandlePointerDown(e: ReactPointerEvent, trackId: string) {
-    if (selectMode) return
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
     draggingIdRef.current = trackId
     setDragOrderIds(entries.map((en) => en.track.id))
@@ -228,17 +202,7 @@ export function AdminLibrary() {
 
   return (
     <div className="admin-library">
-      <div className="admin-library__header">
-        <h2>БИБЛИОТЕКА</h2>
-        <button
-          onClick={() => {
-            setSelectMode((v) => !v)
-            setSelectedIds(new Set())
-          }}
-        >
-          {selectMode ? 'Готово' : 'Выбрать'}
-        </button>
-      </div>
+      <h2>БИБЛИОТЕКА</h2>
       <input
         type="file"
         accept="audio/mpeg,audio/mp4,audio/wav"
@@ -259,43 +223,26 @@ export function AdminLibrary() {
             key={entry.track.id}
             data-track-id={entry.track.id}
             className={dragOrderIds && draggingIdRef.current === entry.track.id ? 'is-dragging' : ''}
-            onClick={() => selectMode && toggleSelected(entry.track.id)}
           >
-            {selectMode ? (
-              <span className={`select-dot ${selectedIds.has(entry.track.id) ? 'is-selected' : ''}`} />
-            ) : (
-              <span
-                className="drag-handle"
-                onPointerDown={(e) => handleHandlePointerDown(e, entry.track.id)}
-                onPointerMove={handleHandlePointerMove}
-                onPointerUp={handleHandlePointerUp}
-                onPointerCancel={handleHandlePointerUp}
-              >
-                ≡
-              </span>
-            )}
+            <span
+              className="drag-handle"
+              onPointerDown={(e) => handleHandlePointerDown(e, entry.track.id)}
+              onPointerMove={handleHandlePointerMove}
+              onPointerUp={handleHandlePointerUp}
+              onPointerCancel={handleHandlePointerUp}
+            >
+              ≡
+            </span>
             <span className="admin-library__label">
               {entry.position}. {entry.track.artist} — {entry.track.title}
             </span>
-            {!selectMode && (
-              <>
-                <button onClick={() => handleToggle(entry.track.id, entry.track.isEnabled)}>
-                  {entry.track.isEnabled ? 'Выключить' : 'Включить'}
-                </button>
-                <button onClick={() => handleDelete(entry.track.id)}>Удалить</button>
-              </>
-            )}
+            <button onClick={() => handleToggle(entry.track.id, entry.track.isEnabled)}>
+              {entry.track.isEnabled ? 'Выключить' : 'Включить'}
+            </button>
+            <button onClick={() => handleDelete(entry.track.id)}>Удалить</button>
           </li>
         ))}
       </ul>
-
-      {selectMode && (
-        <div className="admin-library__bulkbar">
-          <button disabled={selectedIds.size === 0} onClick={handleBulkDelete}>
-            Удалить ({selectedIds.size})
-          </button>
-        </div>
-      )}
     </div>
   )
 }
