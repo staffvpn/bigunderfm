@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
 import { audioContentType, buildTrackFilePath } from '../lib/storagePath'
@@ -7,6 +7,13 @@ export function AdminLibrary() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
   const [uploading, setUploading] = useState(false)
   const [results, setResults] = useState<string[]>([])
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // Local-only visual order while a drag is in progress — the server only
+  // hears about it once via commitOrder() on release, not on every move.
+  const [dragOrderIds, setDragOrderIds] = useState<string[] | null>(null)
+  const draggingIdRef = useRef<string | null>(null)
+  const listRef = useRef<HTMLUListElement>(null)
 
   async function reload() {
     // includeDisabled: the admin must still see (and be able to re-enable)
@@ -113,16 +120,12 @@ export function AdminLibrary() {
     reload()
   }
 
-  async function handleDelete(trackId: string) {
-    // Deleting the row alone leaves the actual audio (and cover, if any)
-    // sitting in Storage forever — it's never referenced again, but never
-    // freed either, silently eating into the project's storage quota.
-    // Remove the row first (whatever the exact Storage call outcome is,
-    // the track disappears from the library either way), then clean up
-    // both underlying files.
-    const entry = entries.find((e) => e.track.id === trackId)
-    await supabase.from('tracks').delete().eq('id', trackId)
-    if (entry) {
+  // Shared by the single-row Delete button and bulk select-mode delete —
+  // both need the same "row first, then its Storage files" cleanup from
+  // the orphan fix, just for a list of one or many.
+  async function deleteTracks(targets: PlaylistEntry[]) {
+    for (const entry of targets) {
+      await supabase.from('tracks').delete().eq('id', entry.track.id)
       await supabase.storage.from('tracks').remove([entry.track.filePath])
       if (entry.track.coverPath) {
         await supabase.storage.from('covers').remove([entry.track.coverPath])
@@ -131,26 +134,49 @@ export function AdminLibrary() {
     reload()
   }
 
+  async function handleDelete(trackId: string) {
+    const entry = entries.find((e) => e.track.id === trackId)
+    if (entry) await deleteTracks([entry])
+  }
+
+  async function handleBulkDelete() {
+    const targets = entries.filter((e) => selectedIds.has(e.track.id))
+    setSelectedIds(new Set())
+    setSelectMode(false)
+    await deleteTracks(targets)
+  }
+
+  function toggleSelected(trackId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(trackId)) {
+        next.delete(trackId)
+      } else {
+        next.add(trackId)
+      }
+      return next
+    })
+  }
+
   async function handleToggle(trackId: string, isEnabled: boolean) {
     await supabase.from('tracks').update({ is_enabled: !isEnabled }).eq('id', trackId)
     reload()
   }
 
-  async function handleReorder(fromPosition: number, toIndex: number) {
-    const moved = entries.find((e) => e.position === fromPosition)
-    if (!moved) return
-
-    const reordered = entries.filter((e) => e.position !== fromPosition).sort((a, b) => a.position - b.position)
-    reordered.splice(toIndex, 0, moved)
-
+  // Renumbers the ENTIRE list to 1..N in the given order — position has no
+  // UNIQUE constraint specifically so this is safe (see 0001_init.sql):
+  // any transient duplicate mid-loop self-heals once the loop finishes,
+  // and ordering only ever reads via ORDER BY position.
+  async function commitOrder(orderedIds: string[]) {
     const failures: string[] = []
-    for (let i = 0; i < reordered.length; i++) {
+    for (let i = 0; i < orderedIds.length; i++) {
       const { error } = await supabase
         .from('playlist_items')
         .update({ position: i + 1 })
-        .eq('track_id', reordered[i].track.id)
+        .eq('track_id', orderedIds[i])
       if (error) {
-        failures.push(`ОШИБКА СОРТИРОВКИ: ${reordered[i].track.title} (${error.message})`)
+        const entry = entries.find((e) => e.track.id === orderedIds[i])
+        failures.push(`ОШИБКА СОРТИРОВКИ: ${entry?.track.title ?? orderedIds[i]} (${error.message})`)
       }
     }
     if (failures.length > 0) {
@@ -159,9 +185,60 @@ export function AdminLibrary() {
     reload()
   }
 
+  // Pointer Events (not the old HTML5 drag-and-drop attribute this
+  // replaced) so dragging by the handle works on touch, not just mouse —
+  // native `draggable` never fires on mobile browsers at all.
+  function handleHandlePointerDown(e: ReactPointerEvent, trackId: string) {
+    if (selectMode) return
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    draggingIdRef.current = trackId
+    setDragOrderIds(entries.map((en) => en.track.id))
+  }
+
+  function handleHandlePointerMove(e: ReactPointerEvent) {
+    const draggingId = draggingIdRef.current
+    if (!draggingId) return
+
+    const overEl = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-track-id]')
+    const overId = overEl?.dataset.trackId
+    if (!overId || overId === draggingId) return
+
+    setDragOrderIds((prev) => {
+      if (!prev) return prev
+      const from = prev.indexOf(draggingId)
+      const to = prev.indexOf(overId)
+      if (from === -1 || to === -1 || from === to) return prev
+      const next = [...prev]
+      next.splice(from, 1)
+      next.splice(to, 0, draggingId)
+      return next
+    })
+  }
+
+  function handleHandlePointerUp() {
+    const finalOrder = dragOrderIds
+    draggingIdRef.current = null
+    setDragOrderIds(null)
+    if (finalOrder) commitOrder(finalOrder)
+  }
+
+  const visibleEntries = dragOrderIds
+    ? dragOrderIds.map((id) => entries.find((e) => e.track.id === id)).filter((e): e is PlaylistEntry => !!e)
+    : entries
+
   return (
     <div className="admin-library">
-      <h2>БИБЛИОТЕКА</h2>
+      <div className="admin-library__header">
+        <h2>БИБЛИОТЕКА</h2>
+        <button
+          onClick={() => {
+            setSelectMode((v) => !v)
+            setSelectedIds(new Set())
+          }}
+        >
+          {selectMode ? 'Готово' : 'Выбрать'}
+        </button>
+      </div>
       <input
         type="file"
         accept="audio/mpeg,audio/mp4,audio/wav"
@@ -176,25 +253,49 @@ export function AdminLibrary() {
         ))}
       </ul>
 
-      <ul className="admin-library__list">
-        {entries.map((entry, index) => (
+      <ul className="admin-library__list" ref={listRef}>
+        {visibleEntries.map((entry) => (
           <li
             key={entry.track.id}
-            draggable
-            onDragStart={(e) => e.dataTransfer.setData('text/plain', String(entry.position))}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => handleReorder(Number(e.dataTransfer.getData('text/plain')), index)}
+            data-track-id={entry.track.id}
+            className={dragOrderIds && draggingIdRef.current === entry.track.id ? 'is-dragging' : ''}
+            onClick={() => selectMode && toggleSelected(entry.track.id)}
           >
-            <span>
+            {selectMode ? (
+              <span className={`select-dot ${selectedIds.has(entry.track.id) ? 'is-selected' : ''}`} />
+            ) : (
+              <span
+                className="drag-handle"
+                onPointerDown={(e) => handleHandlePointerDown(e, entry.track.id)}
+                onPointerMove={handleHandlePointerMove}
+                onPointerUp={handleHandlePointerUp}
+                onPointerCancel={handleHandlePointerUp}
+              >
+                ≡
+              </span>
+            )}
+            <span className="admin-library__label">
               {entry.position}. {entry.track.artist} — {entry.track.title}
             </span>
-            <button onClick={() => handleToggle(entry.track.id, entry.track.isEnabled)}>
-              {entry.track.isEnabled ? 'Выключить' : 'Включить'}
-            </button>
-            <button onClick={() => handleDelete(entry.track.id)}>Удалить</button>
+            {!selectMode && (
+              <>
+                <button onClick={() => handleToggle(entry.track.id, entry.track.isEnabled)}>
+                  {entry.track.isEnabled ? 'Выключить' : 'Включить'}
+                </button>
+                <button onClick={() => handleDelete(entry.track.id)}>Удалить</button>
+              </>
+            )}
           </li>
         ))}
       </ul>
+
+      {selectMode && (
+        <div className="admin-library__bulkbar">
+          <button disabled={selectedIds.size === 0} onClick={handleBulkDelete}>
+            Удалить ({selectedIds.size})
+          </button>
+        </div>
+      )}
     </div>
   )
 }

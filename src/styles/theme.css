@@ -250,6 +250,17 @@ button {
   font-weight: 900;
   letter-spacing: 1px;
   padding: 4px 10px;
+  margin: 0;
+}
+
+.admin-radio-controls h2 {
+  margin: 0 0 16px;
+}
+
+.admin-library__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin: 0 0 16px;
 }
 
@@ -273,12 +284,52 @@ button {
 .admin-library__list li,
 .admin-radio-controls li {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 8px;
   padding: 10px 4px;
   border-bottom: 1px solid var(--color-surface-2);
+}
+
+.admin-library__list li.is-dragging {
+  background: var(--color-surface);
+  opacity: 0.6;
+}
+
+.admin-library__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A generous tap target, not just the glyph itself — this is the whole
+   reason native HTML5 drag-and-drop got replaced with Pointer Events:
+   dragging needs to actually work with a thumb, not just a mouse. */
+.drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  font-size: 18px;
+  color: var(--color-muted);
   cursor: grab;
+  touch-action: none;
+}
+
+.select-dot {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-muted);
+}
+
+.select-dot.is-selected {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .admin-library button,
@@ -300,6 +351,29 @@ button {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-accent-ink);
+}
+
+.admin-library__bulkbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-surface-2);
+  z-index: 2;
+}
+
+/* Comes after the general .admin-library button rule in source order so
+   its bigger padding/full-width actually win at equal specificity. */
+.admin-library__bulkbar button {
+  width: 100%;
+  padding: 14px;
+}
+
+.admin-library__bulkbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .app__admin-nav {
