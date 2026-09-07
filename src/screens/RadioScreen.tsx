@@ -139,85 +139,54 @@ export function RadioScreen() {
     }, durationMs / steps)
   }
 
-  // Starts playback with a fade-in, but ONLY when actually transitioning
-  // from paused — seekAndSync's "already playing, just resyncing" path also
-  // calls this, and re-triggering a fade every routine resync (nothing
-  // audibly changed) would be wrong, not just redundant.
-  function beginPlayback(audio: HTMLAudioElement) {
-    const wasPaused = audio.paused
-    if (wasPaused) {
-      // Silence it BEFORE play() even starts (no audible pop at full
-      // volume), then wait for the 'playing' event — which fires once
-      // output has actually begun, after whatever buffering a fresh
-      // track/seek needs — before starting the ramp. Starting the ramp
-      // right after calling play() instead (the previous bug here) timed
-      // it against wall-clock time from the play() *call*, not from when
-      // sound actually started: if buffering took even close to as long
-      // as the fade itself, the ramp could finish before anything was
-      // audible at all, sounding like a hard start with no fade — this
-      // never showed up for the fade-OUT (an already-playing, already
-      // buffered element has no such delay), only for fade-IN.
-      audio.volume = 0
-      audio.addEventListener('playing', () => fadeVolume(audio, 0, 1, FADE_SECONDS * 1000), { once: true })
-    }
-    audio.play().catch(() => {})
-  }
-
-  // The one place currentTime ever gets assigned when we might also want
-  // to play — every caller (a fresh track load, a plain resync, or the
-  // user pressing Play) MUST go through this, not call audio.play()
-  // directly, or it can start before a pending seek has actually landed.
-  function seekAndSync(audio: HTMLAudioElement, targetOffset: number, shouldPlay: boolean, gen: number) {
-    // Captured BEFORE assigning currentTime — right after a fresh src load
-    // (or before any real seek) this reflects where playback actually is,
-    // so comparing it against targetOffset tells us whether a real seek is
-    // even needed. Reading audio.currentTime back AFTER assignment can't
-    // do this: that always reflects the pending seek's TARGET immediately,
-    // not whether the browser has actually finished getting there.
-    const previousTime = audio.currentTime
-    audio.currentTime = targetOffset
-
+  // The one place currentTime AND play() ever get coordinated — every
+  // caller (a fresh track load, a plain resync, or the user pressing
+  // Play) MUST go through this, not call audio.play() directly.
+  //
+  // Order matters here in a way that's easy to get backwards: this used
+  // to seek first and only call play() once the seek had verifiably
+  // landed (waiting on 'seeked', then polling currentTime directly when
+  // 'seeked' turned out not to fire reliably on Telegram's iOS WebView
+  // either) — but neither approach ever actually got the seek to land on
+  // that platform AT ALL (confirmed live, repeatedly, after ruling out
+  // stale/orphaned elements). The same code works correctly on desktop.
+  // That combination — desktop fine, iOS Safari/WebKit specifically
+  // broken, 100% reproducible — matches a known WebKit bug class: setting
+  // currentTime BEFORE the first play() inside a user-gesture / audio
+  // engine startup can be silently reset back to 0 once the session
+  // actually engages. The fix iOS itself expects is the opposite order:
+  // call play() first, THEN set currentTime.
+  function seekAndSync(audio: HTMLAudioElement, targetOffset: number, shouldPlay: boolean) {
     if (!shouldPlay) {
+      audio.currentTime = targetOffset
       audio.pause()
       return
     }
 
-    // Landing within a second of where we already were means there was
-    // nothing meaningful to seek (e.g. a genuine near-0:00 start) —
-    // 'seeked' may not even fire for that, so just play.
-    if (Math.abs(previousTime - targetOffset) < 1) {
-      beginPlayback(audio)
+    const wasPaused = audio.paused
+    if (!wasPaused) {
+      // Already playing (a routine resync, nothing actually changed) —
+      // the audio session is already engaged, a plain seek is safe.
+      audio.currentTime = targetOffset
       return
     }
 
-    // Otherwise this is a real seek, and it's ASYNC — the browser still
-    // has to fetch the byte range for that offset, which on a cold network
-    // load (no HTTP cache yet) can take real time, more for a longer file.
-    // Calling play() before it lands plays whatever's already buffered —
-    // the start of the file — until the seek catches up: audibly
-    // indistinguishable from "it restarted from 0:00". A warm/cached load
-    // (e.g. switching tabs back to Radio) makes the seek resolve near
-    // instantly, which is why this only showed up on a fresh load or a
-    // long track.
-    //
-    // Polling audio.currentTime directly rather than trusting the
-    // 'seeked' event — some WebViews (observed: Telegram's iOS one)
-    // don't reliably fire it for a network-streamed seek, which meant
-    // playback was landing on the 10s last-resort fallback below EVERY
-    // time on that platform, not just rarely, still starting from
-    // whatever position the seek silently never reached (0:00). Reading
-    // currentTime back is unambiguous regardless of which events an
-    // engine does or doesn't support.
-    const deadline = Date.now() + 10000
-    const pollForSeekLanding = () => {
-      if (playbackGenRef.current !== gen) return
-      if (Math.abs(audio.currentTime - targetOffset) < 1 || Date.now() >= deadline) {
-        beginPlayback(audio)
-        return
-      }
-      setTimeout(pollForSeekLanding, 100)
-    }
-    pollForSeekLanding()
+    // Silence it before play() so there's no audible pop at full volume
+    // before the fade-in ramp takes over once real output begins.
+    audio.volume = 0
+    audio.play().catch(() => {})
+    // Setting currentTime right after — not before — play(). Also
+    // reapplied inside 'playing' as a second attempt: some engines still
+    // don't honor a seek issued before output has genuinely started.
+    audio.currentTime = targetOffset
+    audio.addEventListener(
+      'playing',
+      () => {
+        audio.currentTime = targetOffset
+        fadeVolume(audio, 0, 1, FADE_SECONDS * 1000)
+      },
+      { once: true },
+    )
   }
 
   function applyPositionToAudio(pos: RadioPosition | null, playing: boolean, playlist: PlaylistEntry[]) {
@@ -249,14 +218,14 @@ export function RadioScreen() {
         'loadedmetadata',
         () => {
           if (playbackGenRef.current !== gen) return
-          seekAndSync(audio, targetOffset, shouldPlay, gen)
+          seekAndSync(audio, targetOffset, shouldPlay)
         },
         { once: true },
       )
       return
     }
 
-    seekAndSync(audio, targetOffset, shouldPlay, gen)
+    seekAndSync(audio, targetOffset, shouldPlay)
   }
 
   function scheduleNextAdvance(
@@ -275,8 +244,8 @@ export function RadioScreen() {
 
     // Fade the current track out right before it ends, so the swap at the
     // boundary isn't a hard cut — resync() (scheduled above, at the same
-    // boundary) then loads the next track and beginPlayback() fades it
-    // back in. Only worth doing if there's actually enough left to fade.
+    // boundary) then loads the next track and seekAndSync() fades it back
+    // in. Only worth doing if there's actually enough left to fade.
     if (remaining > FADE_SECONDS) {
       fadeOutTimerRef.current = setTimeout(
         () => {
