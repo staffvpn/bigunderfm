@@ -20,6 +20,29 @@ const PRELOAD_LEAD_SECONDS = 5
 /** Fade-out-then-fade-in duration around each track transition. */
 const FADE_SECONDS = 2
 
+// Module-level singleton, created once and reused across every mount of
+// RadioScreen for the lifetime of the page. Rendering an <audio> element
+// straight in JSX meant every mount (e.g. leaving the Radio tab and
+// coming back) created a brand new DOM node — and since removing a media
+// element from the document does NOT stop its playback, careful
+// pause-on-unmount cleanup was the only thing standing between that and
+// two elements playing simultaneously. A single shared element removes
+// the failure mode at the root: there is only ever one to begin with, no
+// discipline required elsewhere. It doesn't need to be in the DOM at all
+// to play — createMediaElementSource (useAudioAnalyser.ts) works on a
+// detached element too.
+//
+// Deliberately NOT setting crossOrigin here (it was 'anonymous' before,
+// only for the equalizer's Web Audio analysis) — seeking to a non-zero
+// offset was consistently landing back at 0:00 specifically on Telegram's
+// iOS WebView, which matches a known class of WebKit bugs where
+// crossOrigin interacts badly with Range-request seeking. Actual
+// playback of a cross-origin file works fine without it; the only cost
+// is the equalizer's analyser reading zeroed (silent) data instead of
+// real levels, which is a purely cosmetic degradation — correct playback
+// position matters far more than the bar animation.
+const sharedAudio: HTMLAudioElement = document.createElement('audio')
+
 export function RadioScreen() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
   const [position, setPosition] = useState<RadioPosition | null>(null)
@@ -29,7 +52,7 @@ export function RadioScreen() {
   const [isPlaying, setIsPlaying] = useState(false)
   const [userStarted, setUserStarted] = useState(false)
   const [isPaused, setIsPaused] = useState(true)
-  const audioRef = useRef<HTMLAudioElement>(null)
+  const audioRef = useRef<HTMLAudioElement>(sharedAudio)
   const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const preloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fadeOutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -453,8 +476,6 @@ export function RadioScreen() {
           ДАЛЬШЕ • {nextEntry.track.artist} — {nextEntry.track.title}
         </div>
       )}
-
-      <audio ref={audioRef} crossOrigin="anonymous" />
     </div>
   )
 }
