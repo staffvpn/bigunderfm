@@ -115,10 +115,22 @@ export function RadioScreen() {
   // audibly changed) would be wrong, not just redundant.
   function beginPlayback(audio: HTMLAudioElement) {
     const wasPaused = audio.paused
-    audio.play().catch(() => {})
     if (wasPaused) {
-      fadeVolume(audio, 0, 1, FADE_SECONDS * 1000)
+      // Silence it BEFORE play() even starts (no audible pop at full
+      // volume), then wait for the 'playing' event — which fires once
+      // output has actually begun, after whatever buffering a fresh
+      // track/seek needs — before starting the ramp. Starting the ramp
+      // right after calling play() instead (the previous bug here) timed
+      // it against wall-clock time from the play() *call*, not from when
+      // sound actually started: if buffering took even close to as long
+      // as the fade itself, the ramp could finish before anything was
+      // audible at all, sounding like a hard start with no fade — this
+      // never showed up for the fade-OUT (an already-playing, already
+      // buffered element has no such delay), only for fade-IN.
+      audio.volume = 0
+      audio.addEventListener('playing', () => fadeVolume(audio, 0, 1, FADE_SECONDS * 1000), { once: true })
     }
+    audio.play().catch(() => {})
   }
 
   // The one place currentTime ever gets assigned when we might also want
