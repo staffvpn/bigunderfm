@@ -86,6 +86,57 @@ export function RadioScreen() {
     setEntries(await fetchPlaylist())
   }
 
+  // The one place currentTime ever gets assigned when we might also want
+  // to play — every caller (a fresh track load, a plain resync, or the
+  // user pressing Play) MUST go through this, not call audio.play()
+  // directly, or it can start before a pending seek has actually landed.
+  function seekAndSync(audio: HTMLAudioElement, targetOffset: number, shouldPlay: boolean) {
+    // Captured BEFORE assigning currentTime — right after a fresh src load
+    // (or before any real seek) this reflects where playback actually is,
+    // so comparing it against targetOffset tells us whether a real seek is
+    // even needed. Reading audio.currentTime back AFTER assignment can't
+    // do this: that always reflects the pending seek's TARGET immediately,
+    // not whether the browser has actually finished getting there.
+    const previousTime = audio.currentTime
+    audio.currentTime = targetOffset
+
+    if (!shouldPlay) {
+      audio.pause()
+      return
+    }
+
+    // Landing within a second of where we already were means there was
+    // nothing meaningful to seek (e.g. a genuine near-0:00 start) —
+    // 'seeked' may not even fire for that, so just play.
+    if (Math.abs(previousTime - targetOffset) < 1) {
+      audio.play().catch(() => {})
+      return
+    }
+
+    // Otherwise this is a real seek, and it's ASYNC — the browser still
+    // has to fetch the byte range for that offset, which on a cold network
+    // load (no HTTP cache yet) can take real time, more for a longer file.
+    // Calling play() before it lands plays whatever's already buffered —
+    // the start of the file — until the seek catches up: audibly
+    // indistinguishable from "it restarted from 0:00". A warm/cached load
+    // (e.g. switching tabs back to Radio) makes the seek resolve near
+    // instantly, which is why this only showed up on a fresh load or a
+    // long track. Wait for the real 'seeked' event rather than guessing a
+    // fixed delay — a fixed timeout short enough to feel responsive for a
+    // short track is exactly the kind of thing that loses the race against
+    // a slow seek on a much longer one (this app has a ~25 min track in
+    // rotation). The long setTimeout here is a last-resort unstick, not
+    // the expected path — it should essentially never fire.
+    let started = false
+    const startPlayback = () => {
+      if (started) return
+      started = true
+      audio.play().catch(() => {})
+    }
+    audio.addEventListener('seeked', startPlayback, { once: true })
+    setTimeout(startPlayback, 10000)
+  }
+
   function applyPositionToAudio(pos: RadioPosition | null, playing: boolean, playlist: PlaylistEntry[]) {
     const audio = audioRef.current
     if (!audio || !pos) return
@@ -98,71 +149,15 @@ export function RadioScreen() {
 
     if (audio.src !== url) {
       audio.src = url
-      // Seeking immediately after assigning `src` is dropped by browsers that
-      // haven't finished resource selection yet — defer until the media has
-      // metadata and the seek can actually land. Calling play() is deferred
-      // to the SAME callback: calling it right after assigning `src` (the
-      // previous bug here) starts playback from 0:00 immediately, then
-      // visibly/audibly jumps to the real offset once metadata loads a
-      // moment later — sounds exactly like "it restarted from the
-      // beginning" whenever that load isn't instant.
+      // Seeking immediately after assigning `src` is dropped by browsers
+      // that haven't finished resource selection yet — defer until the
+      // media actually has metadata and the seek can land.
       const targetOffset = pos.offsetSeconds
-      audio.addEventListener(
-        'loadedmetadata',
-        () => {
-          // Captured BEFORE assigning currentTime — right after a fresh
-          // src load this is ~0, so comparing it against targetOffset
-          // tells us whether a real seek is even needed, which reading
-          // audio.currentTime back AFTER assignment can't: that always
-          // reflects the pending seek TARGET immediately, not whether the
-          // browser has actually finished getting there.
-          const previousTime = audio.currentTime
-          audio.currentTime = targetOffset
-          if (!shouldPlay) return
-
-          // Landing within a second of where we already were means there
-          // was nothing meaningful to seek (e.g. a genuine near-0:00
-          // start) — 'seeked' may not even fire for that, so just play.
-          if (Math.abs(previousTime - targetOffset) < 1) {
-            audio.play().catch(() => {})
-            return
-          }
-
-          // Otherwise this is a real seek, and it's ASYNC — the browser
-          // still has to fetch the byte range for that offset, which on a
-          // cold network load (no HTTP cache yet) can take real time,
-          // more for a longer file. Calling play() before it lands plays
-          // whatever's already buffered — the start of the file — until
-          // the seek catches up: audibly indistinguishable from "it
-          // restarted from 0:00". A warm/cached load (e.g. switching tabs
-          // back to Radio) makes the seek resolve near instantly, which
-          // is why this only showed up on a fresh load. Wait for the real
-          // 'seeked' event rather than guessing a fixed delay — a fixed
-          // timeout short enough to feel responsive for a short track is
-          // exactly the kind of thing that loses the race against a slow
-          // seek on a much longer one (this app has a ~25 min track in
-          // rotation). The long setTimeout here is a last-resort unstick,
-          // not the expected path — it should essentially never fire.
-          let started = false
-          const startPlayback = () => {
-            if (started) return
-            started = true
-            audio.play().catch(() => {})
-          }
-          audio.addEventListener('seeked', startPlayback, { once: true })
-          setTimeout(startPlayback, 10000)
-        },
-        { once: true },
-      )
+      audio.addEventListener('loadedmetadata', () => seekAndSync(audio, targetOffset, shouldPlay), { once: true })
       return
     }
 
-    audio.currentTime = pos.offsetSeconds
-    if (shouldPlay) {
-      audio.play().catch(() => {})
-    } else {
-      audio.pause()
-    }
+    seekAndSync(audio, pos.offsetSeconds, shouldPlay)
   }
 
   function scheduleNextAdvance(
@@ -257,11 +252,21 @@ export function RadioScreen() {
     isPausedRef.current = !playing
     setUserStarted(true)
     setIsPaused(!playing)
-    if (playing) {
-      audio.play().catch(() => {})
-    } else {
+
+    if (!playing) {
       audio.pause()
+      return
     }
+
+    // Recompute a fresh position instead of trusting `position` state,
+    // which is only as recent as the last resync and can be meaningfully
+    // stale by the time someone actually presses Play — then feed it
+    // through the exact same seek-then-play discipline every other
+    // playback change uses (resync() -> applyPositionToAudio ->
+    // seekAndSync). Calling audio.play() directly here (the previous bug)
+    // trusted whatever currentTime the element already happened to have,
+    // which isn't guaranteed to be seeked yet on a fresh mount.
+    resync()
   }
 
   function handlePlayClick() {
