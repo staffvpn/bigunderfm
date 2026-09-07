@@ -17,6 +17,8 @@ import { useAudioAnalyser } from '../lib/useAudioAnalyser'
 
 /** How long before a track boundary to start buffering the next file. */
 const PRELOAD_LEAD_SECONDS = 5
+/** Fade-out-then-fade-in duration around each track transition. */
+const FADE_SECONDS = 2
 
 export function RadioScreen() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
@@ -30,6 +32,8 @@ export function RadioScreen() {
   const audioRef = useRef<HTMLAudioElement>(null)
   const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const preloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fadeOutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fadeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const entriesRef = useRef<PlaylistEntry[]>([])
 
   // hasInteractedRef/isPausedRef (not the userStarted/isPaused state below) are
@@ -86,6 +90,37 @@ export function RadioScreen() {
     setEntries(await fetchPlaylist())
   }
 
+  // Ramps audio.volume from `from` to `to` over durationMs. Cancels any
+  // fade already in progress first — a skip or a fresh play during a
+  // fade-out shouldn't leave two ramps fighting over the same property.
+  function fadeVolume(audio: HTMLAudioElement, from: number, to: number, durationMs: number) {
+    if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current)
+    audio.volume = from
+    const steps = 20
+    let step = 0
+    fadeIntervalRef.current = setInterval(() => {
+      step++
+      audio.volume = from + (to - from) * (step / steps)
+      if (step >= steps) {
+        audio.volume = to
+        if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current)
+        fadeIntervalRef.current = null
+      }
+    }, durationMs / steps)
+  }
+
+  // Starts playback with a fade-in, but ONLY when actually transitioning
+  // from paused — seekAndSync's "already playing, just resyncing" path also
+  // calls this, and re-triggering a fade every routine resync (nothing
+  // audibly changed) would be wrong, not just redundant.
+  function beginPlayback(audio: HTMLAudioElement) {
+    const wasPaused = audio.paused
+    audio.play().catch(() => {})
+    if (wasPaused) {
+      fadeVolume(audio, 0, 1, FADE_SECONDS * 1000)
+    }
+  }
+
   // The one place currentTime ever gets assigned when we might also want
   // to play — every caller (a fresh track load, a plain resync, or the
   // user pressing Play) MUST go through this, not call audio.play()
@@ -109,7 +144,7 @@ export function RadioScreen() {
     // nothing meaningful to seek (e.g. a genuine near-0:00 start) —
     // 'seeked' may not even fire for that, so just play.
     if (Math.abs(previousTime - targetOffset) < 1) {
-      audio.play().catch(() => {})
+      beginPlayback(audio)
       return
     }
 
@@ -131,7 +166,7 @@ export function RadioScreen() {
     const startPlayback = () => {
       if (started) return
       started = true
-      audio.play().catch(() => {})
+      beginPlayback(audio)
     }
     audio.addEventListener('seeked', startPlayback, { once: true })
     setTimeout(startPlayback, 10000)
@@ -168,10 +203,27 @@ export function RadioScreen() {
   ) {
     if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current)
     if (preloadTimerRef.current) clearTimeout(preloadTimerRef.current)
+    if (fadeOutTimerRef.current) clearTimeout(fadeOutTimerRef.current)
     if (!pos || !playing || tracks.length === 0) return
 
     const remaining = secondsUntilNextBoundary(tracks, pos)
     advanceTimerRef.current = setTimeout(() => resync(), Math.max(250, remaining * 1000))
+
+    // Fade the current track out right before it ends, so the swap at the
+    // boundary isn't a hard cut — resync() (scheduled above, at the same
+    // boundary) then loads the next track and beginPlayback() fades it
+    // back in. Only worth doing if there's actually enough left to fade.
+    if (remaining > FADE_SECONDS) {
+      fadeOutTimerRef.current = setTimeout(
+        () => {
+          const audio = audioRef.current
+          if (audio && !audio.paused) {
+            fadeVolume(audio, audio.volume, 0, FADE_SECONDS * 1000)
+          }
+        },
+        (remaining - FADE_SECONDS) * 1000,
+      )
+    }
 
     // Best-effort warm-up: start buffering the next file a few seconds before
     // the boundary so the swap isn't a cold fetch. Not a crossfade.
@@ -231,6 +283,8 @@ export function RadioScreen() {
       clearInterval(tickTimer)
       if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current)
       if (preloadTimerRef.current) clearTimeout(preloadTimerRef.current)
+      if (fadeOutTimerRef.current) clearTimeout(fadeOutTimerRef.current)
+      if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
