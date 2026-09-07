@@ -111,9 +111,28 @@ export function RadioScreen() {
         'loadedmetadata',
         () => {
           audio.currentTime = targetOffset
-          if (shouldPlay) {
+          if (!shouldPlay) return
+
+          // Assigning currentTime starts an ASYNC seek — the browser still
+          // has to actually fetch the byte range for that offset, which on
+          // a cold network load (no HTTP cache yet) can take real time.
+          // Calling play() immediately, without waiting for that seek to
+          // land, plays whatever's already buffered — usually the start of
+          // the file — until the seek catches up, which sounds exactly
+          // like "it restarted from 0:00". A warm/cached load (e.g.
+          // switching tabs back to Radio) makes the seek resolve near
+          // instantly, which is why this only showed up on a fresh load.
+          // seeked doesn't fire at all if targetOffset already equals the
+          // current position (e.g. a genuine 0:00 start), so a timeout
+          // fallback guarantees play() still fires either way.
+          let started = false
+          const startPlayback = () => {
+            if (started) return
+            started = true
             audio.play().catch(() => {})
           }
+          audio.addEventListener('seeked', startPlayback, { once: true })
+          setTimeout(startPlayback, 500)
         },
         { once: true },
       )
