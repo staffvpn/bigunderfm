@@ -175,25 +175,26 @@ export function RadioScreen() {
     // indistinguishable from "it restarted from 0:00". A warm/cached load
     // (e.g. switching tabs back to Radio) makes the seek resolve near
     // instantly, which is why this only showed up on a fresh load or a
-    // long track. Wait for the real 'seeked' event rather than guessing a
-    // fixed delay — a fixed timeout short enough to feel responsive for a
-    // short track is exactly the kind of thing that loses the race against
-    // a slow seek on a much longer one (this app has a ~25 min track in
-    // rotation). The long setTimeout here is a last-resort unstick, not
-    // the expected path — it should essentially never fire.
-    let started = false
-    const startPlayback = () => {
-      if (started) return
-      started = true
-      // A newer attempt (e.g. the user pressed Play while this one was
-      // still waiting on the seek) has since taken over — applying this
-      // stale one now would fight it, possibly landing on the wrong
-      // offset or re-triggering playback it already started correctly.
+    // long track.
+    //
+    // Polling audio.currentTime directly rather than trusting the
+    // 'seeked' event — some WebViews (observed: Telegram's iOS one)
+    // don't reliably fire it for a network-streamed seek, which meant
+    // playback was landing on the 10s last-resort fallback below EVERY
+    // time on that platform, not just rarely, still starting from
+    // whatever position the seek silently never reached (0:00). Reading
+    // currentTime back is unambiguous regardless of which events an
+    // engine does or doesn't support.
+    const deadline = Date.now() + 10000
+    const pollForSeekLanding = () => {
       if (playbackGenRef.current !== gen) return
-      beginPlayback(audio)
+      if (Math.abs(audio.currentTime - targetOffset) < 1 || Date.now() >= deadline) {
+        beginPlayback(audio)
+        return
+      }
+      setTimeout(pollForSeekLanding, 100)
     }
-    audio.addEventListener('seeked', startPlayback, { once: true })
-    setTimeout(startPlayback, 10000)
+    pollForSeekLanding()
   }
 
   function applyPositionToAudio(pos: RadioPosition | null, playing: boolean, playlist: PlaylistEntry[]) {
