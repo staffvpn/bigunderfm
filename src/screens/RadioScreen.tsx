@@ -94,26 +94,51 @@ export function RadioScreen() {
     if (!entry) return
 
     const url = trackPublicUrl(entry.track.filePath)
+    const shouldPlay = playing && hasInteractedRef.current && !isPausedRef.current
+    const targetOffset = pos.offsetSeconds
+
+    function seek() {
+      audio!.currentTime = targetOffset
+    }
+
     if (audio.src !== url) {
       audio.src = url
       // Seeking immediately after assigning `src` is dropped by browsers that
       // haven't finished resource selection yet — defer until the media has
       // metadata and the seek can actually land.
-      const targetOffset = pos.offsetSeconds
-      audio.addEventListener(
-        'loadedmetadata',
-        () => {
-          audio.currentTime = targetOffset
-        },
-        { once: true },
-      )
-    } else {
-      audio.currentTime = pos.offsetSeconds
+      audio.addEventListener('loadedmetadata', doPlayback, { once: true })
+      return
     }
-    if (playing && hasInteractedRef.current && !isPausedRef.current) {
-      audio.play().catch(() => {})
-    } else {
-      audio.pause()
+
+    doPlayback()
+
+    // Isolated, single change on top of the reverted baseline: reported
+    // live, repeatedly, that a seek issued BEFORE the first play() of a
+    // session consistently landed back at 0:00 — specifically and only on
+    // Telegram's iOS WebView, never on desktop with the identical code.
+    // That platform-specific pattern matches a known WebKit bug: iOS can
+    // silently reset a currentTime set before the audio session has
+    // actually engaged via play(). Re-applying currentTime is also
+    // scheduled once more inside 'playing' (real output start) as a
+    // second attempt, in case the first one still doesn't stick.
+    function doPlayback() {
+      if (!shouldPlay) {
+        seek()
+        audio!.pause()
+        return
+      }
+
+      const wasPaused = audio!.paused
+      if (!wasPaused) {
+        // Already playing (a routine resync, nothing actually changed) —
+        // the session's already engaged, a plain seek is safe here.
+        seek()
+        return
+      }
+
+      audio!.play().catch(() => {})
+      seek()
+      audio!.addEventListener('playing', seek, { once: true })
     }
   }
 
