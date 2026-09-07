@@ -35,6 +35,16 @@ export function AdminLibrary() {
     let nextPosition = (existing?.[0]?.position ?? 0) + 1
 
     for (const file of Array.from(files)) {
+      // Tracked so the catch block can roll back whatever this attempt
+      // already created — otherwise a failure partway through (a dropped
+      // connection mid-upload on a big file over mobile data, a DB error)
+      // leaves an orphaned Storage object that's uploaded but never shows
+      // up anywhere, silently eating into the project's storage quota
+      // forever with no way to notice from inside the app.
+      let uploadedFilePath: string | null = null
+      let uploadedCoverPath: string | null = null
+      let insertedTrackId: string | null = null
+
       try {
         const meta = await extractTrackMetadata(file)
 
@@ -52,11 +62,14 @@ export function AdminLibrary() {
           .from('tracks')
           .upload(filePath, file, { contentType: audioContentType(file.name, file.type) })
         if (uploadError) throw uploadError
+        uploadedFilePath = filePath
 
         let coverPath: string | null = null
         if (meta.coverBlob) {
           coverPath = `${crypto.randomUUID()}.jpg`
-          await supabase.storage.from('covers').upload(coverPath, meta.coverBlob)
+          const { error: coverError } = await supabase.storage.from('covers').upload(coverPath, meta.coverBlob)
+          if (coverError) throw coverError
+          uploadedCoverPath = coverPath
         }
 
         const { data: trackRow, error: insertError } = await supabase
@@ -72,15 +85,26 @@ export function AdminLibrary() {
           .select('id')
           .single()
         if (insertError) throw insertError
+        insertedTrackId = trackRow.id
 
-        await supabase.from('playlist_items').insert({
+        const { error: playlistError } = await supabase.from('playlist_items').insert({
           track_id: trackRow.id,
           position: nextPosition++,
         })
+        if (playlistError) throw playlistError
 
         log.push(`ГОТОВО: ${meta.artist} — ${meta.title}`)
       } catch (err) {
-        log.push(`ОШИБКА: ${file.name} (${(err as Error).message})`)
+        if (insertedTrackId) {
+          await supabase.from('tracks').delete().eq('id', insertedTrackId)
+        }
+        if (uploadedFilePath) {
+          await supabase.storage.from('tracks').remove([uploadedFilePath])
+        }
+        if (uploadedCoverPath) {
+          await supabase.storage.from('covers').remove([uploadedCoverPath])
+        }
+        log.push(`ОШИБКА: ${file.name} (${(err as Error).message}) — попробуй загрузить ещё раз`)
       }
     }
 
