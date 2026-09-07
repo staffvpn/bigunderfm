@@ -188,6 +188,16 @@ export function RadioScreen() {
       clearInterval(tickTimer)
       if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current)
       if (preloadTimerRef.current) clearTimeout(preloadTimerRef.current)
+      // Removing the <audio> element from the DOM does NOT stop it playing
+      // — browsers keep an orphaned media element's playback running in
+      // the background indefinitely unless it's explicitly paused. Without
+      // this, leaving the Radio tab and coming back left the OLD element
+      // silently still playing in the background while a brand new one
+      // started too — two tracks audible at once. This is the one change
+      // from tonight being kept: verified low-risk on its own (doesn't
+      // touch seek/play ordering at all), unlike everything else that got
+      // reverted.
+      audioRef.current?.pause()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
