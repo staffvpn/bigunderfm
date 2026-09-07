@@ -49,6 +49,13 @@ export function RadioScreen() {
   // fine; it's only *reading* state there that would be stale.
   const hasInteractedRef = useRef(false)
   const isPausedRef = useRef(true)
+  // Bumped every time applyPositionToAudio starts a new seek/play attempt.
+  // Its async continuations (loadedmetadata, seeked, the timeout fallback)
+  // capture the value at their own start and check it before acting — if
+  // a newer attempt has since started (e.g. the user pressed Play while an
+  // earlier resync's metadata was still loading), the stale one is a
+  // silent no-op instead of applying an outdated seek on top of a newer one.
+  const playbackGenRef = useRef(0)
   const { analyser, resume: resumeAnalyser } = useAudioAnalyser(audioRef)
 
   useEffect(() => {
@@ -137,7 +144,7 @@ export function RadioScreen() {
   // to play — every caller (a fresh track load, a plain resync, or the
   // user pressing Play) MUST go through this, not call audio.play()
   // directly, or it can start before a pending seek has actually landed.
-  function seekAndSync(audio: HTMLAudioElement, targetOffset: number, shouldPlay: boolean) {
+  function seekAndSync(audio: HTMLAudioElement, targetOffset: number, shouldPlay: boolean, gen: number) {
     // Captured BEFORE assigning currentTime — right after a fresh src load
     // (or before any real seek) this reflects where playback actually is,
     // so comparing it against targetOffset tells us whether a real seek is
@@ -178,6 +185,11 @@ export function RadioScreen() {
     const startPlayback = () => {
       if (started) return
       started = true
+      // A newer attempt (e.g. the user pressed Play while this one was
+      // still waiting on the seek) has since taken over — applying this
+      // stale one now would fight it, possibly landing on the wrong
+      // offset or re-triggering playback it already started correctly.
+      if (playbackGenRef.current !== gen) return
       beginPlayback(audio)
     }
     audio.addEventListener('seeked', startPlayback, { once: true })
@@ -193,18 +205,34 @@ export function RadioScreen() {
 
     const url = trackPublicUrl(entry.track.filePath)
     const shouldPlay = playing && hasInteractedRef.current && !isPausedRef.current
+    const targetOffset = pos.offsetSeconds
+    const gen = ++playbackGenRef.current
 
     if (audio.src !== url) {
       audio.src = url
-      // Seeking immediately after assigning `src` is dropped by browsers
-      // that haven't finished resource selection yet — defer until the
-      // media actually has metadata and the seek can land.
-      const targetOffset = pos.offsetSeconds
-      audio.addEventListener('loadedmetadata', () => seekAndSync(audio, targetOffset, shouldPlay), { once: true })
+    }
+
+    // Same-src does NOT mean metadata is actually ready — e.g. the user
+    // pressing Play can call this again while an earlier call's src
+    // assignment is still loading. Assuming it was ready (the previous bug
+    // here) meant currentTime got assigned before the browser could
+    // actually act on it, silently doing nothing; the seek that DID
+    // eventually apply came from whichever 'loadedmetadata' listener fired
+    // later — using ITS OWN (possibly stale) shouldPlay/targetOffset, not
+    // this call's, since JS closures don't get updated after the fact.
+    if (audio.readyState < HTMLMediaElement.HAVE_METADATA) {
+      audio.addEventListener(
+        'loadedmetadata',
+        () => {
+          if (playbackGenRef.current !== gen) return
+          seekAndSync(audio, targetOffset, shouldPlay, gen)
+        },
+        { once: true },
+      )
       return
     }
 
-    seekAndSync(audio, pos.offsetSeconds, shouldPlay)
+    seekAndSync(audio, targetOffset, shouldPlay, gen)
   }
 
   function scheduleNextAdvance(
@@ -297,6 +325,14 @@ export function RadioScreen() {
       if (preloadTimerRef.current) clearTimeout(preloadTimerRef.current)
       if (fadeOutTimerRef.current) clearTimeout(fadeOutTimerRef.current)
       if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current)
+      // Removing the <audio> element from the DOM does NOT stop it playing
+      // — browsers keep an orphaned media element's playback running in
+      // the background indefinitely unless it's explicitly paused. Without
+      // this, leaving the Radio tab and coming back left the OLD element
+      // silently still playing in the background while a brand new one
+      // started too — two tracks audible at once, which is exactly what
+      // got reported live.
+      audioRef.current?.pause()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
