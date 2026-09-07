@@ -244,11 +244,21 @@ export function RadioScreen() {
     isPausedRef.current = !playing
     setUserStarted(true)
     setIsPaused(!playing)
-    if (playing) {
-      audio.play().catch(() => {})
-    } else {
+
+    if (!playing) {
       audio.pause()
+      return
     }
+
+    // Recompute a fresh position and route through the exact same
+    // seek-then-play path resync() -> applyPositionToAudio always uses —
+    // calling audio.play() directly here (what this did before) skipped
+    // currentTime entirely, playing whatever position the element already
+    // happened to be sitting at instead of the correct synced offset.
+    // This is very likely why neither of the last two isolated fixes
+    // (both inside applyPositionToAudio) changed anything: the Play
+    // button never actually ran through that code at all.
+    resync()
   }
 
   function handlePlayClick() {
