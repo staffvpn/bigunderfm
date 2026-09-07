@@ -250,14 +250,24 @@ export function RadioScreen() {
       return
     }
 
-    // Recompute a fresh position and route through the exact same
-    // seek-then-play path resync() -> applyPositionToAudio always uses —
-    // calling audio.play() directly here (what this did before) skipped
-    // currentTime entirely, playing whatever position the element already
-    // happened to be sitting at instead of the correct synced offset.
-    // This is very likely why neither of the last two isolated fixes
-    // (both inside applyPositionToAudio) changed anything: the Play
-    // button never actually ran through that code at all.
+    // play() MUST be called synchronously, still inside this click's own
+    // call stack — the previous fix here called resync() first and only
+    // played once its 3 network requests resolved, which is well past
+    // the point iOS Safari still considers this "within" the user
+    // gesture; it silently rejects play() called after an await like
+    // that, which is very likely why nothing audible happened at all and
+    // the progress bar looked frozen (paused never became false).
+    audio.play().catch(() => {})
+
+    // Apply whatever position we already have synchronously too — a
+    // few seconds stale at worst, far better than leaving currentTime
+    // wherever it happened to be — then correct it precisely in the
+    // background. This second seek isn't gesture-restricted (it's not
+    // calling play() again, just adjusting currentTime on an element
+    // that's already playing), so awaiting inside resync() is fine here.
+    if (position) {
+      audio.currentTime = position.offsetSeconds
+    }
     resync()
   }
 
