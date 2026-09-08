@@ -22,6 +22,18 @@ import { useAudioAnalyser } from '../lib/useAudioAnalyser'
 const STREAM_HOST = 'https://159-194-234-135.sslip.io'
 const STREAM_URL = `${STREAM_HOST}/radio`
 
+// Icecast's status-json.xsl escapes non-ASCII in the title as numeric HTML
+// entities (e.g. "Б" -> "&#1041;") — that's XML-safe encoding, not actual
+// HTML, so it comes through as literal "&#1041;" text rather than being
+// decoded automatically. Routing it through the browser's own HTML parser
+// (never inserted into the live DOM) decodes it correctly for any entity,
+// not just the numeric ones Icecast happens to use today.
+function decodeHtmlEntities(text: string): string {
+  const el = document.createElement('textarea')
+  el.innerHTML = text
+  return el.value
+}
+
 export function RadioScreen() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
   const [userStarted, setUserStarted] = useState(false)
@@ -57,8 +69,9 @@ export function RadioScreen() {
       try {
         const resp = await fetch(`${STREAM_HOST}/status-json.xsl`)
         const data = await resp.json()
-        const title: string | undefined = data?.icestats?.source?.title
-        if (title) {
+        const rawTitle: string | undefined = data?.icestats?.source?.title
+        if (rawTitle) {
+          const title = decodeHtmlEntities(rawTitle)
           const [artist, ...rest] = title.split(' - ')
           setNowPlaying({ artist, title: rest.join(' - ') || title })
         }
