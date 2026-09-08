@@ -44,8 +44,23 @@ export function RadioScreen() {
   // audible yet, which reads as "stuck"/"not working" rather than "loading".
   const [isBuffering, setIsBuffering] = useState(false)
   const [nowPlaying, setNowPlaying] = useState<{ artist: string; title: string } | null>(null)
+  const [connectError, setConnectError] = useState(false)
   const audioRef = useRef<HTMLAudioElement>(null)
   const { analyser, resume: resumeAnalyser } = useAudioAnalyser(audioRef)
+
+  // isPausedRef mirrors the isPaused state but is readable from the
+  // mount-once effect's closures below without going stale — those
+  // closures capture whatever isPaused was on first render forever,
+  // while .current always reflects the latest value. Needed so a
+  // reconnect attempt (fired from an 'error'/'stalled' handler registered
+  // once) can tell "did the user actually want this stopped" from "did
+  // the connection just drop under a still-active listen".
+  const isPausedRef = useRef(true)
+  useEffect(() => {
+    isPausedRef.current = isPaused
+  }, [isPaused])
+  const reconnectAttemptsRef = useRef(0)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Playlist is fetched purely for display (art/next-up etc. if ever
   // needed) — it no longer drives playback at all, so edits in the admin
@@ -92,28 +107,64 @@ export function RadioScreen() {
     // the initial connect and any mid-stream stall), 'playing' fires the
     // moment sound genuinely starts coming out.
     const audio = audioRef.current
+    const MAX_RECONNECT_ATTEMPTS = 5
+
+    function reconnect() {
+      if (!audio) return
+      audio.src = STREAM_URL
+      audio.play().catch(() => {})
+    }
+
+    // Icecast connections do drop mid-listen sometimes (a flaky mobile
+    // network, a WebKit quirk with long-lived unbounded streams — this
+    // isn't specific to us, real radio apps hit the same thing). Without
+    // this, a drop just silently killed playback and left the listener
+    // stuck looking at a paused button with no idea why. Retries with
+    // a short growing backoff instead, only while the user still actually
+    // wants to be listening (isPausedRef.current === false) — never
+    // reconnects into someone who explicitly hit pause.
+    function scheduleReconnect() {
+      if (isPausedRef.current) return
+      if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+        setIsBuffering(false)
+        setIsPaused(true)
+        setConnectError(true)
+        return
+      }
+      setIsBuffering(true)
+      const delay = Math.min(1000 * 2 ** reconnectAttemptsRef.current, 10000)
+      reconnectAttemptsRef.current += 1
+      reconnectTimerRef.current = setTimeout(reconnect, delay)
+    }
+
     function handleWaiting() {
       setIsBuffering(true)
     }
     function handlePlaying() {
       setIsBuffering(false)
+      setConnectError(false)
+      reconnectAttemptsRef.current = 0
     }
     function handleAudioError() {
-      setIsBuffering(false)
-      setIsPaused(true)
+      scheduleReconnect()
     }
+    // A live stream "ending" is never intentional on the server side —
+    // treat it exactly like a dropped connection.
     audio?.addEventListener('waiting', handleWaiting)
     audio?.addEventListener('stalled', handleWaiting)
     audio?.addEventListener('playing', handlePlaying)
     audio?.addEventListener('error', handleAudioError)
+    audio?.addEventListener('ended', handleAudioError)
 
     return () => {
       supabase.removeChannel(channel)
       clearInterval(nowPlayingTimer)
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       audio?.removeEventListener('waiting', handleWaiting)
       audio?.removeEventListener('stalled', handleWaiting)
       audio?.removeEventListener('playing', handlePlaying)
       audio?.removeEventListener('error', handleAudioError)
+      audio?.removeEventListener('ended', handleAudioError)
       audio?.pause()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,10 +184,22 @@ export function RadioScreen() {
     setIsPaused(!playing)
 
     if (!playing) {
+      // An explicit pause cancels any in-flight reconnect attempt — a
+      // drop-triggered retry landing a second after the user paused would
+      // otherwise silently start the stream back up underneath them.
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      reconnectAttemptsRef.current = 0
       setIsBuffering(false)
+      setConnectError(false)
       audio.pause()
       return
     }
+
+    // Fresh, explicit attempt — forget any exhausted auto-reconnect streak
+    // from before so this gets the full retry budget again.
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+    reconnectAttemptsRef.current = 0
+    setConnectError(false)
 
     // Set proactively on click rather than waiting for the 'waiting' event
     // — that event can lag slightly behind src/load(), and the button
@@ -223,6 +286,10 @@ export function RadioScreen() {
             and pause are guaranteed the same visual style everywhere. */}
         {userStarted && !isPaused ? <span className="icon-pause" /> : <span className="icon-play" />}
       </button>
+
+      {connectError && (
+        <div className="radio-screen__error">Не удалось подключиться. Нажмите play, чтобы попробовать снова.</div>
+      )}
 
       {nextEntry && (
         <div className="radio-screen__next">
