@@ -61,6 +61,18 @@ export function RadioScreen() {
   }, [isPaused])
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Guards against a real, observed race: iOS can fire the Media Session
+  // 'play' action AND the in-app button's onClick for the same physical
+  // tap (the WebView's own click and the OS-level "now playing" control
+  // syncing back to it). handlePlayClick's `isBuffering` check doesn't
+  // catch this — React state updates aren't synchronous, so a second
+  // invocation landing in the same tick reads the same stale `false` the
+  // first one did, and both proceed to open their own real connection to
+  // /radio. Server logs confirmed this: two genuinely separate, several-
+  // -second-long stream connections opening at the exact same timestamp,
+  // repeatedly. A plain ref flips synchronously and is read/set before
+  // either invocation yields, so the second call sees it immediately.
+  const connectingRef = useRef(false)
 
   // Playlist is fetched purely for display (art/next-up etc. if ever
   // needed) — it no longer drives playback at all, so edits in the admin
@@ -111,6 +123,7 @@ export function RadioScreen() {
 
     function reconnect() {
       if (!audio) return
+      connectingRef.current = true
       audio.src = STREAM_URL
       audio.play().catch(() => {})
     }
@@ -125,6 +138,10 @@ export function RadioScreen() {
     // reconnects into someone who explicitly hit pause.
     function scheduleReconnect() {
       if (isPausedRef.current) return
+      // A reconnect is already pending/in flight — the duplicate-connection
+      // bug this guards against is exactly two 'error' events (one per
+      // stray parallel connection) each independently calling this.
+      if (reconnectTimerRef.current || connectingRef.current) return
       if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
         setIsBuffering(false)
         setIsPaused(true)
@@ -134,18 +151,23 @@ export function RadioScreen() {
       setIsBuffering(true)
       const delay = Math.min(1000 * 2 ** reconnectAttemptsRef.current, 10000)
       reconnectAttemptsRef.current += 1
-      reconnectTimerRef.current = setTimeout(reconnect, delay)
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null
+        reconnect()
+      }, delay)
     }
 
     function handleWaiting() {
       setIsBuffering(true)
     }
     function handlePlaying() {
+      connectingRef.current = false
       setIsBuffering(false)
       setConnectError(false)
       reconnectAttemptsRef.current = 0
     }
     function handleAudioError() {
+      connectingRef.current = false
       scheduleReconnect()
     }
     // A live stream "ending" is never intentional on the server side —
@@ -189,11 +211,24 @@ export function RadioScreen() {
       // otherwise silently start the stream back up underneath them.
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       reconnectAttemptsRef.current = 0
+      connectingRef.current = false
       setIsBuffering(false)
       setConnectError(false)
       audio.pause()
       return
     }
+
+    // A connection attempt is already in flight — iOS can fire the Media
+    // Session 'play' action for the same physical tap that also fired the
+    // button's onClick, and this function is the one thing both paths
+    // funnel through. Without this, both calls proceed and each opens its
+    // own real connection to /radio; server logs confirmed exactly that,
+    // twice, as two genuinely separate several-second-long stream
+    // connections landing at the same timestamp. A ref (not React state)
+    // because it must be visible to the second call synchronously, before
+    // either has yielded back to the event loop for a re-render.
+    if (connectingRef.current) return
+    connectingRef.current = true
 
     // Fresh, explicit attempt — forget any exhausted auto-reconnect streak
     // from before so this gets the full retry budget again.
