@@ -329,6 +329,17 @@ button {
   color: var(--color-accent-ink);
 }
 
+.admin-radio-controls button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.admin-radio-controls__error {
+  color: var(--color-accent);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
 .app__admin-nav {
   position: fixed;
   bottom: 0;
