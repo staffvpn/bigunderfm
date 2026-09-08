@@ -111,6 +111,15 @@ Deno.serve(async (req) => {
       app_metadata: { is_admin: isAdmin },
     })
 
+    // Best-effort visibility log — who actually opened the app and when.
+    // Awaited (rather than fire-and-forget) so it isn't dropped if the edge
+    // runtime tears the isolate down right after the response is sent; a
+    // failure here is logged but never fails the login itself.
+    const { error: logError } = await adminClient
+      .from('login_events')
+      .insert({ telegram_user_id: telegramUserId, is_admin: isAdmin })
+    if (logError) console.error('login_events insert failed', logError)
+
     return new Response(JSON.stringify({ isAdmin }), {
       status: 200,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
