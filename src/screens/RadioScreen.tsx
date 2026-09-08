@@ -13,7 +13,14 @@ import { useAudioAnalyser } from '../lib/useAudioAnalyser'
 // "virtual synced timeline" design (client-side seek against a shared
 // anchor timestamp), which never reliably seeked on iOS/WebKit — a live
 // stream structurally can't have that bug, there is nothing to seek.
-const STREAM_URL = 'http://159.194.234.135:8000/radio'
+// HTTPS via nginx + Let's Encrypt on the VPS, fronting Icecast — plain
+// http:// here was silently blocked as mixed content by the browser
+// since the app itself is served over https://, which looked like
+// "nothing works" with no visible error. sslip.io is a free wildcard DNS
+// that resolves <ip-with-dashes>.sslip.io back to that literal IP, which
+// is enough for Let's Encrypt's HTTP-01 challenge — no real domain needed.
+const STREAM_HOST = 'https://159-194-234-135.sslip.io'
+const STREAM_URL = `${STREAM_HOST}/radio`
 
 export function RadioScreen() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
@@ -48,7 +55,7 @@ export function RadioScreen() {
     // the broadcast we are.
     async function pollNowPlaying() {
       try {
-        const resp = await fetch('http://159.194.234.135:8000/status-json.xsl')
+        const resp = await fetch(`${STREAM_HOST}/status-json.xsl`)
         const data = await resp.json()
         const title: string | undefined = data?.icestats?.source?.title
         if (title) {

@@ -8,7 +8,13 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 // the VPS directly.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-const RADIO_SERVER_URL = Deno.env.get('RADIO_SERVER_URL') ?? 'http://159.194.234.135:8001'
+// Routed through the same HTTPS nginx front-end as the stream itself
+// (path /skip-bridge/ -> localhost:8001 on the VPS) rather than a raw
+// http://ip:8001 URL — Deno's fetch has no mixed-content restriction the
+// way a browser does, so this particular hop didn't strictly need it, but
+// keeping one HTTPS origin for everything server-side is simpler to reason
+// about and to firewall later if a bare :8001 port ever needs closing off.
+const RADIO_SERVER_URL = Deno.env.get('RADIO_SERVER_URL') ?? 'https://159-194-234-135.sslip.io/skip-bridge'
 // No tooling on hand to set a custom Function secret for this project, so
 // this falls back to a literal matching what's baked into skip-bridge.service
 // on the VPS. Edge Function source isn't served to browsers, only readable
