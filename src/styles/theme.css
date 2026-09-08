@@ -181,6 +181,20 @@ button {
   opacity: 0.8;
 }
 
+.radio-screen__play--buffering {
+  animation: radio-screen-buffering-pulse 1s ease-in-out infinite;
+  cursor: default;
+}
+
+@keyframes radio-screen-buffering-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
 /* CSS-drawn play/pause glyphs — deliberately not Unicode characters (▶
    renders as a colored emoji glyph on iOS instead of a plain shape), so
    both states are guaranteed the same flat style on every platform. */

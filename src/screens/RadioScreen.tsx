@@ -38,6 +38,11 @@ export function RadioScreen() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
   const [userStarted, setUserStarted] = useState(false)
   const [isPaused, setIsPaused] = useState(true)
+  // Connecting to a live stream isn't instant (DNS + TLS + TCP + enough
+  // buffered audio to actually start, ~1-2s) — without this the button
+  // flips to the pause icon the instant it's clicked while nothing is
+  // audible yet, which reads as "stuck"/"not working" rather than "loading".
+  const [isBuffering, setIsBuffering] = useState(false)
   const [nowPlaying, setNowPlaying] = useState<{ artist: string; title: string } | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const { analyser, resume: resumeAnalyser } = useAudioAnalyser(audioRef)
@@ -82,10 +87,34 @@ export function RadioScreen() {
     pollNowPlaying()
     const nowPlayingTimer = setInterval(pollNowPlaying, 10000)
 
+    // Reflect the audio element's actual state rather than just the click
+    // intent — 'waiting' fires while it's connecting/buffering (including
+    // the initial connect and any mid-stream stall), 'playing' fires the
+    // moment sound genuinely starts coming out.
+    const audio = audioRef.current
+    function handleWaiting() {
+      setIsBuffering(true)
+    }
+    function handlePlaying() {
+      setIsBuffering(false)
+    }
+    function handleAudioError() {
+      setIsBuffering(false)
+      setIsPaused(true)
+    }
+    audio?.addEventListener('waiting', handleWaiting)
+    audio?.addEventListener('stalled', handleWaiting)
+    audio?.addEventListener('playing', handlePlaying)
+    audio?.addEventListener('error', handleAudioError)
+
     return () => {
       supabase.removeChannel(channel)
       clearInterval(nowPlayingTimer)
-      audioRef.current?.pause()
+      audio?.removeEventListener('waiting', handleWaiting)
+      audio?.removeEventListener('stalled', handleWaiting)
+      audio?.removeEventListener('playing', handlePlaying)
+      audio?.removeEventListener('error', handleAudioError)
+      audio?.pause()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -104,9 +133,17 @@ export function RadioScreen() {
     setIsPaused(!playing)
 
     if (!playing) {
+      setIsBuffering(false)
       audio.pause()
       return
     }
+
+    // Set proactively on click rather than waiting for the 'waiting' event
+    // — that event can lag slightly behind src/load(), and the button
+    // should show "connecting" from the very first frame after the tap.
+    // Cleared by the 'playing' handler once sound actually starts, or by
+    // 'error' if the connection fails outright.
+    setIsBuffering(true)
 
     // A live stream has no "resume from where I left off" — reconnecting
     // always joins wherever the broadcast currently is, exactly like tuning
@@ -121,6 +158,10 @@ export function RadioScreen() {
   }
 
   function handlePlayClick() {
+    // Ignore taps while a connection attempt is already in flight — a
+    // second overlapping audio.load()/play() here just restarts the
+    // buffering clock rather than doing anything useful.
+    if (isBuffering) return
     setPlaybackIntent(isPaused)
   }
 
@@ -160,15 +201,23 @@ export function RadioScreen() {
     <div className="radio-screen">
       <div className="radio-screen__header">
         <span className="radio-screen__station">BIGUNDER FM</span>
-        <OnAirBadge isPlaying={userStarted && !isPaused} />
+        <OnAirBadge isPlaying={userStarted && !isPaused && !isBuffering} />
       </div>
 
       <div className="radio-screen__artist">{nowPlaying?.artist ?? '—'}</div>
-      <div className="radio-screen__title">{nowPlaying?.title ?? 'Загрузка...'}</div>
+      <div className="radio-screen__title">
+        {userStarted && !isPaused && isBuffering
+          ? 'Подключение...'
+          : (nowPlaying?.title ?? 'Загрузка...')}
+      </div>
 
       <Equalizer analyser={analyser} />
 
-      <button className="radio-screen__play" onClick={handlePlayClick}>
+      <button
+        className={`radio-screen__play${isBuffering ? ' radio-screen__play--buffering' : ''}`}
+        onClick={handlePlayClick}
+        disabled={userStarted && !isPaused && isBuffering}
+      >
         {/* CSS-drawn shapes, not Unicode glyphs (▶ renders as a colored
             emoji glyph on iOS instead of a plain triangle) — this way play
             and pause are guaranteed the same visual style everywhere. */}
