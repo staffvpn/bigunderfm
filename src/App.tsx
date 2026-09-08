@@ -30,7 +30,17 @@ export default function App() {
 
   return (
     <div className="app">
-      {tab === 'radio' && <RadioScreen />}
+      {/* Always mounted, hidden via CSS rather than conditionally rendered
+          like the other tabs — RadioScreen owns the live <audio> element and
+          its connection state. An admin bouncing to Библиотека/Управление
+          and back (a completely normal workflow — e.g. to hit Skip) used to
+          unmount it entirely, silently killing playback; they'd come back
+          to a reset Play button with no indication why, which reads as
+          "broken" rather than "you switched tabs". Keeping it mounted lets
+          the stream keep playing in the background across every tab. */}
+      <div style={{ display: tab === 'radio' ? 'contents' : 'none' }}>
+        <RadioScreen />
+      </div>
       {tab === 'library' && isAdmin && <AdminLibrary />}
       {tab === 'controls' && isAdmin && <AdminRadioControls />}
 
