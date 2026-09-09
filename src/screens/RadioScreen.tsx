@@ -182,15 +182,15 @@ export function RadioScreen() {
     const audio = audioRef.current
     if (!audio) return
 
-    // Must run synchronously inside the originating user-gesture call
-    // stack — Safari/iOS only resumes a suspended AudioContext (and
-    // permits audio.play()) from within one.
-    resumeAnalyser()
-
     setUserStarted(true)
     setIsPaused(!playing)
 
     if (!playing) {
+      // Still safe/cheap to call here even though this branch doesn't
+      // touch src — first-ever interaction being a pause (e.g. a stray
+      // Media Session action) is an edge case, not one worth special-
+      // casing out.
+      resumeAnalyser()
       // An explicit pause cancels any in-flight reconnect attempt — a
       // drop-triggered retry landing a second after the user paused would
       // otherwise silently start the stream back up underneath them.
@@ -237,6 +237,23 @@ export function RadioScreen() {
     } else {
       audio.load()
     }
+
+    // Tap the Web Audio graph AFTER the element already has a resource
+    // attached, not before (as this did until now) — on the very first
+    // ever play, `resumeAnalyser()` used to run while `audio.src` was
+    // still empty, and createMediaElementSource()'d an element with
+    // nothing assigned to it yet. Some browsers' analyser only starts
+    // receiving real decoded samples if the element already had a
+    // resource at tap-creation time; before the live-stream rewrite, src
+    // was always already set by the time this ran (the old virtual-
+    // timeline logic assigned it well before any click), which is very
+    // likely why the equalizer used to react to real audio and stopped
+    // once src started getting assigned inside this same click instead.
+    // Still fully synchronous — no await between here and audio.play()
+    // below — so the user-gesture requirement for AudioContext.resume()
+    // is untouched by the reorder.
+    resumeAnalyser()
+
     audio.play().catch(() => {})
   }
 
