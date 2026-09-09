@@ -29,16 +29,26 @@ export function useAudioAnalyser(audioRef: RefObject<HTMLAudioElement>) {
       const AudioContextCtor: typeof AudioContext | undefined =
         window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
       if (AudioContextCtor) {
-        const audioCtx = new AudioContextCtor()
-        const source = audioCtx.createMediaElementSource(audio)
-        const node = audioCtx.createAnalyser()
-        node.fftSize = 64
-        source.connect(node)
-        node.connect(audioCtx.destination)
+        try {
+          const audioCtx = new AudioContextCtor()
+          const source = audioCtx.createMediaElementSource(audio)
+          const node = audioCtx.createAnalyser()
+          node.fftSize = 64
+          source.connect(node)
+          node.connect(audioCtx.destination)
 
-        sourcedElements.add(audio)
-        contextRef.current = audioCtx
-        setAnalyser(node)
+          sourcedElements.add(audio)
+          contextRef.current = audioCtx
+          setAnalyser(node)
+        } catch (err) {
+          // Never let a visualizer-only failure take playback down with
+          // it — createMediaElementSource can throw (e.g. a cross-origin
+          // source the browser decides to taint despite crossOrigin being
+          // set, or being called twice on one element some other way).
+          // Logged so it's diagnosable instead of a silent "the bars just
+          // don't move" report with nothing to go on.
+          console.error('useAudioAnalyser: failed to set up Web Audio graph, visualizer will stay blank', err)
+        }
       }
       // Unsupported browser (no Web Audio API): the visualizer stays
       // blank, playback is entirely unaffected either way.
