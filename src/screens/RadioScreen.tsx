@@ -336,7 +336,7 @@ export function RadioScreen() {
             : (nowPlaying?.title ?? 'Загрузка...')}
         </div>
 
-        <Equalizer analyser={analyser} />
+        <Equalizer analyser={analyser} isPlaying={userStarted && !isPaused && !isBuffering} />
 
         <button
           className={`radio-screen__play${isBuffering ? ' radio-screen__play--buffering' : ''}`}

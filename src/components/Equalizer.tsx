@@ -2,6 +2,12 @@ import { useEffect, useRef } from 'react'
 
 interface EqualizerProps {
   analyser: AnalyserNode | null
+  /** Whether audio is actually playing right now — the draw loop used to
+      run forever once `analyser` was first created (which only ever
+      happens once, on the first play), so pausing or leaving the Эфир
+      tab never stopped it: the bars kept animating on their own with no
+      audio behind them at all. */
+  isPlaying: boolean
 }
 
 const FALLBACK_BAR_COUNT = 24
@@ -98,13 +104,22 @@ const TICK_JITTER = 0.12
  * caller owns creating/resuming the actual Web Audio graph
  * (see useAudioAnalyser) and just hands over the node to read from.
  */
-export function Equalizer({ analyser }: EqualizerProps) {
+export function Equalizer({ analyser, isPlaying }: EqualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
-    if (!canvas || !ctx || !analyser) return
+    if (!canvas || !ctx) return
+
+    // Not playing (paused, still connecting, or the analyser hasn't been
+    // created yet) — make sure nothing is left drawn from a previous
+    // session and don't start the loop at all, rather than relying on
+    // stale bars from before a pause to just sit there unchanged.
+    if (!isPlaying || !analyser) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      return
+    }
 
     const data = new Uint8Array(analyser.frequencyBinCount)
     let rafId: number
@@ -168,7 +183,7 @@ export function Equalizer({ analyser }: EqualizerProps) {
     rafId = requestAnimationFrame(draw)
 
     return () => cancelAnimationFrame(rafId)
-  }, [analyser])
+  }, [analyser, isPlaying])
 
   return <canvas ref={canvasRef} className="equalizer" width={320} height={36} />
 }
