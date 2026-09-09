@@ -52,6 +52,43 @@ button {
 .radio-screen {
   position: relative;
   height: 100vh;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+/* Poster-style backdrop — one of src/assets/backgrounds/*, re-rolled
+   whenever the track changes (see RadioScreen.tsx). background-size:
+   cover crops to fill the exact screen area at the image's own aspect
+   ratio — it never stretches a dimension unevenly and never shrinks down
+   to a tiny centered square the way `contain` would. */
+.radio-screen__background {
+  position: absolute;
+  inset: 0;
+  background-color: var(--color-bg);
+  background-size: cover;
+  background-position: center;
+}
+
+/* Sits between the image and the readable content — without it, a bright
+   or busy photo behind bold white text/the play button would fight for
+   attention and hurt legibility depending on which image landed. Heavier
+   at the very top/bottom (where the station name and the play button/nav
+   need the most contrast) than through the middle. */
+.radio-screen__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(21, 21, 21, 0.75) 0%,
+    rgba(21, 21, 21, 0.25) 25%,
+    rgba(21, 21, 21, 0.35) 60%,
+    rgba(21, 21, 21, 0.85) 100%
+  );
+}
+
+.radio-screen__content {
+  position: relative;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -61,7 +98,6 @@ button {
   justify-content: space-between;
   gap: 10px;
   padding: 20px 20px 90px;
-  overflow: hidden;
 }
 
 .radio-screen__header {

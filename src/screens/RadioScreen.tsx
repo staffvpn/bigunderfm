@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { STREAM_HOST, STREAM_URL, decodeHtmlEntities } from '../lib/radioServer'
+import { pickRandomBackground } from '../lib/backgrounds'
 import { OnAirBadge } from '../components/OnAirBadge'
 import { Equalizer } from '../components/Equalizer'
 import { useAudioAnalyser } from '../lib/useAudioAnalyser'
@@ -29,6 +30,11 @@ export function RadioScreen() {
   const [isBuffering, setIsBuffering] = useState(false)
   const [nowPlaying, setNowPlaying] = useState<{ artist: string; title: string } | null>(null)
   const [connectError, setConnectError] = useState(false)
+  // A random poster image from src/assets/backgrounds/ behind everything,
+  // re-rolled whenever the track actually changes (see the effect below
+  // keyed on nowPlaying?.title) — purely decorative/mood, not tied to any
+  // specific track's own artwork.
+  const [background, setBackground] = useState<string | undefined>(() => pickRandomBackground())
   const audioRef = useRef<HTMLAudioElement>(null)
   const { analyser, resume: resumeAnalyser } = useAudioAnalyser(audioRef)
 
@@ -258,38 +264,56 @@ export function RadioScreen() {
     navigator.mediaSession.playbackState = userStarted && !isPaused ? 'playing' : 'paused'
   }, [userStarted, isPaused])
 
+  // Re-roll the background whenever the track actually changes (not on
+  // every 10s metadata poll — nowPlaying?.title only changes value when
+  // the broadcast genuinely moves to a different track).
+  useEffect(() => {
+    if (nowPlaying?.title) {
+      setBackground(pickRandomBackground())
+    }
+  }, [nowPlaying?.title])
+
   return (
     <div className="radio-screen">
-      <div className="radio-screen__header">
-        <span className="radio-screen__station">BIGUNDER FM</span>
-        <OnAirBadge isPlaying={userStarted && !isPaused && !isBuffering} />
+      <div
+        className="radio-screen__background"
+        style={background ? { backgroundImage: `url(${background})` } : undefined}
+        aria-hidden="true"
+      />
+      <div className="radio-screen__scrim" aria-hidden="true" />
+
+      <div className="radio-screen__content">
+        <div className="radio-screen__header">
+          <span className="radio-screen__station">BIGUNDER FM</span>
+          <OnAirBadge isPlaying={userStarted && !isPaused && !isBuffering} />
+        </div>
+
+        <div className="radio-screen__artist">{nowPlaying?.artist ?? '—'}</div>
+        <div className="radio-screen__title">
+          {userStarted && !isPaused && isBuffering
+            ? 'Подключение...'
+            : (nowPlaying?.title ?? 'Загрузка...')}
+        </div>
+
+        <Equalizer analyser={analyser} />
+
+        <button
+          className={`radio-screen__play${isBuffering ? ' radio-screen__play--buffering' : ''}`}
+          onClick={handlePlayClick}
+          disabled={userStarted && !isPaused && isBuffering}
+        >
+          {/* CSS-drawn shapes, not Unicode glyphs (▶ renders as a colored
+              emoji glyph on iOS instead of a plain triangle) — this way play
+              and pause are guaranteed the same visual style everywhere. */}
+          {userStarted && !isPaused ? <span className="icon-pause" /> : <span className="icon-play" />}
+        </button>
+
+        {connectError && (
+          <div className="radio-screen__error">Не удалось подключиться. Нажмите play, чтобы попробовать снова.</div>
+        )}
+
+        <audio ref={audioRef} crossOrigin="anonymous" preload="none" />
       </div>
-
-      <div className="radio-screen__artist">{nowPlaying?.artist ?? '—'}</div>
-      <div className="radio-screen__title">
-        {userStarted && !isPaused && isBuffering
-          ? 'Подключение...'
-          : (nowPlaying?.title ?? 'Загрузка...')}
-      </div>
-
-      <Equalizer analyser={analyser} />
-
-      <button
-        className={`radio-screen__play${isBuffering ? ' radio-screen__play--buffering' : ''}`}
-        onClick={handlePlayClick}
-        disabled={userStarted && !isPaused && isBuffering}
-      >
-        {/* CSS-drawn shapes, not Unicode glyphs (▶ renders as a colored
-            emoji glyph on iOS instead of a plain triangle) — this way play
-            and pause are guaranteed the same visual style everywhere. */}
-        {userStarted && !isPaused ? <span className="icon-pause" /> : <span className="icon-play" />}
-      </button>
-
-      {connectError && (
-        <div className="radio-screen__error">Не удалось подключиться. Нажмите play, чтобы попробовать снова.</div>
-      )}
-
-      <audio ref={audioRef} crossOrigin="anonymous" preload="none" />
     </div>
   )
 }
