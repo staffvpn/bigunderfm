@@ -56,12 +56,15 @@ button {
   background: var(--color-bg);
 }
 
-/* Poster-style backdrop — one of src/assets/backgrounds/*, re-rolled
-   whenever the track changes (see RadioScreen.tsx). background-size:
-   cover crops to fill the exact screen area at the image's own aspect
-   ratio — it never stretches a dimension unevenly and never shrinks down
-   to a tiny centered square the way `contain` would. */
-.radio-screen__background {
+/* Poster-style backdrop — two stacked layers (see RadioScreen.tsx for why
+   two: background-image itself can't be CSS-transitioned, so crossfading
+   means an outgoing layer and an incoming layer, each with their own
+   image, animating past each other) each showing one of
+   src/assets/backgrounds/*, re-rolled whenever the track changes.
+   background-size: cover crops to fill the exact screen area at the
+   image's own aspect ratio — it never stretches a dimension unevenly and
+   never shrinks down to a tiny centered square the way `contain` would. */
+.radio-screen__bg-layer {
   position: absolute;
   inset: 0;
   background-color: var(--color-bg);
@@ -78,6 +81,25 @@ button {
      the crop window further toward the lower part of the source image,
      which visually reads as the photo sliding further up in the frame. */
   background-position: center calc(50% + 50px);
+
+  /* Resting (outgoing/not-yet-shown) state: desaturated, punched-up
+     contrast, dimmed, and slightly zoomed in — an underground mixtape/
+     hood-doc "hard cut" look rather than a soft, generic crossfade.
+     Flipping to --active below animates every one of these back to
+     normal, which is what actually plays the transition. */
+  opacity: 0;
+  transform: scale(1.08);
+  filter: grayscale(1) contrast(1.5) brightness(0.55);
+  transition:
+    opacity 260ms ease-out,
+    transform 900ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 700ms ease-out;
+}
+
+.radio-screen__bg-layer--active {
+  opacity: 1;
+  transform: scale(1);
+  filter: grayscale(0) contrast(1) brightness(1);
 }
 
 /* Sits between the image and the readable content — without it, a bright

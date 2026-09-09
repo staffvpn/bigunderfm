@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { STREAM_HOST, STREAM_URL, decodeHtmlEntities } from '../lib/radioServer'
-import { pickRandomBackground } from '../lib/backgrounds'
+import { pickNextBackground } from '../lib/backgrounds'
 import { OnAirBadge } from '../components/OnAirBadge'
 import { Equalizer } from '../components/Equalizer'
 import { useAudioAnalyser } from '../lib/useAudioAnalyser'
+
+interface BackgroundLayers {
+  a: string | undefined
+  b: string | undefined
+  active: 'a' | 'b'
+}
 
 // Real, always-on broadcast — Icecast (distribution) + Liquidsoap
 // (scheduling/encoding) running on a dedicated VPS, streaming the shared
@@ -33,8 +39,16 @@ export function RadioScreen() {
   // A random poster image from src/assets/backgrounds/ behind everything,
   // re-rolled whenever the track actually changes (see the effect below
   // keyed on nowPlaying?.title) — purely decorative/mood, not tied to any
-  // specific track's own artwork.
-  const [background, setBackground] = useState<string | undefined>(() => pickRandomBackground())
+  // specific track's own artwork. Two alternating layers (not one image
+  // swapped in place) — background-image isn't itself a CSS-transitionable
+  // property, so crossfading between images means keeping both the outgoing
+  // and incoming image each on their own layer and animating opacity
+  // between the two layers instead (see .radio-screen__bg-layer).
+  const [bgLayers, setBgLayers] = useState<BackgroundLayers>(() => ({
+    a: pickNextBackground(),
+    b: undefined,
+    active: 'a',
+  }))
   const audioRef = useRef<HTMLAudioElement>(null)
   const { analyser, resume: resumeAnalyser } = useAudioAnalyser(audioRef)
 
@@ -266,18 +280,28 @@ export function RadioScreen() {
 
   // Re-roll the background whenever the track actually changes (not on
   // every 10s metadata poll — nowPlaying?.title only changes value when
-  // the broadcast genuinely moves to a different track).
+  // the broadcast genuinely moves to a different track). Loads the new
+  // image onto whichever layer is currently OFF-screen, then flips which
+  // layer is "active" — the CSS transition on .radio-screen__bg-layer's
+  // opacity/transform/filter is what actually animates the swap.
   useEffect(() => {
-    if (nowPlaying?.title) {
-      setBackground(pickRandomBackground())
-    }
+    if (!nowPlaying?.title) return
+    setBgLayers((prev) => {
+      const idleLayer = prev.active === 'a' ? 'b' : 'a'
+      return { ...prev, [idleLayer]: pickNextBackground(), active: idleLayer }
+    })
   }, [nowPlaying?.title])
 
   return (
     <div className="radio-screen">
       <div
-        className="radio-screen__background"
-        style={background ? { backgroundImage: `url(${background})` } : undefined}
+        className={`radio-screen__bg-layer${bgLayers.active === 'a' ? ' radio-screen__bg-layer--active' : ''}`}
+        style={bgLayers.a ? { backgroundImage: `url(${bgLayers.a})` } : undefined}
+        aria-hidden="true"
+      />
+      <div
+        className={`radio-screen__bg-layer${bgLayers.active === 'b' ? ' radio-screen__bg-layer--active' : ''}`}
+        style={bgLayers.b ? { backgroundImage: `url(${bgLayers.b})` } : undefined}
         aria-hidden="true"
       />
       <div className="radio-screen__scrim" aria-hidden="true" />
