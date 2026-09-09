@@ -4,6 +4,7 @@ import { authenticate } from './lib/auth'
 import { RadioScreen } from './screens/RadioScreen'
 import { AdminLibrary } from './screens/AdminLibrary'
 import { AdminRadioControls } from './screens/AdminRadioControls'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 type Tab = 'radio' | 'library' | 'controls'
 
@@ -39,10 +40,20 @@ export default function App() {
           "broken" rather than "you switched tabs". Keeping it mounted lets
           the stream keep playing in the background across every tab. */}
       <div style={{ display: tab === 'radio' ? 'contents' : 'none' }}>
-        <RadioScreen />
+        <ErrorBoundary label="Эфир">
+          <RadioScreen />
+        </ErrorBoundary>
       </div>
-      {tab === 'library' && isAdmin && <AdminLibrary />}
-      {tab === 'controls' && isAdmin && <AdminRadioControls />}
+      {tab === 'library' && isAdmin && (
+        <ErrorBoundary label="Библиотека">
+          <AdminLibrary />
+        </ErrorBoundary>
+      )}
+      {tab === 'controls' && isAdmin && (
+        <ErrorBoundary label="Управление">
+          <AdminRadioControls />
+        </ErrorBoundary>
+      )}
 
       {isAdmin && (
         <nav className="app__admin-nav">

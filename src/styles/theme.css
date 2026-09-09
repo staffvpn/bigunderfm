@@ -274,9 +274,55 @@ button {
   margin: 0 0 16px;
 }
 
-.admin-library input[type='file'] {
+.admin-library__rotation-summary {
   color: var(--color-muted);
-  font-size: 13px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 0 0 16px;
+}
+
+/* The native file input is kept in the DOM (and still focusable/keyboard-
+   operable via the label's `for`) but visually replaced by the label
+   below, styled to match the app's other buttons — a bare
+   <input type="file"> renders as the browser's own unstyled, un-themed
+   control, which stuck out badly against everything else here. */
+.admin-library__file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.admin-library__upload-button {
+  display: inline-block;
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  border: 1px solid var(--color-accent);
+  padding: 10px 16px;
+  font-weight: 800;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  margin-bottom: 16px;
+}
+
+.admin-library__upload-button:active {
+  opacity: 0.8;
+}
+
+.admin-library__upload-button.is-disabled {
+  background: transparent;
+  color: var(--color-muted);
+  border-color: var(--color-muted);
+  cursor: default;
 }
 
 .admin-library__results {
@@ -291,7 +337,19 @@ button {
   padding: 0;
 }
 
-.admin-library__list li,
+/* Two rows, not one — a single flex row with the label squeezed between
+   the drag handle and two buttons left almost no width for the title on
+   a phone screen (observed: titles cut to ~3 letters + "…"). The label
+   now gets a full-width row to itself and wraps instead of truncating,
+   and the actions sit on their own row below it. */
+.admin-library__list li {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--color-surface-2);
+}
+
 .admin-radio-controls li {
   display: flex;
   align-items: center;
@@ -305,12 +363,40 @@ button {
   opacity: 0.6;
 }
 
+.admin-library__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-library__actions {
+  display: flex;
+  gap: 8px;
+  /* Lines up under the label, past the drag handle's 32px + the row's 8px gap. */
+  padding-left: 40px;
+}
+
 .admin-library__label {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wraps rather than truncating — the whole point of giving it its own
+     row is so the full title is actually readable, not cut off. */
+  overflow-wrap: anywhere;
+}
+
+.admin-radio-controls__track-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-radio-controls__subheading {
+  margin: 20px 0 8px;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--color-muted);
 }
 
 /* A generous tap target, not just the glyph itself — this is the whole
@@ -359,6 +445,112 @@ button {
   color: var(--color-accent);
   font-size: 12px;
   margin-top: 4px;
+}
+
+.admin-dashboard__warning {
+  background: var(--color-surface);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  margin: 0 0 16px;
+}
+
+.admin-dashboard__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.admin-dashboard__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-surface-2);
+  padding: 12px;
+}
+
+.admin-dashboard__tile-value {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-dashboard__tile-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--color-muted);
+}
+
+.admin-dashboard__now-playing {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-surface-2);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.admin-dashboard__now-playing-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--color-muted);
+}
+
+.admin-dashboard__now-playing-title {
+  font-size: 15px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.error-boundary {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.error-boundary__title {
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 16px;
+}
+
+.error-boundary__detail {
+  color: var(--color-muted);
+  font-size: 12px;
+  max-width: 320px;
+  overflow-wrap: anywhere;
+}
+
+.error-boundary button {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  border: none;
+  padding: 10px 20px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
 }
 
 .app__admin-nav {

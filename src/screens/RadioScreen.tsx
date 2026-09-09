@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { supabase } from '../lib/supabase'
-import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
+import { STREAM_HOST, STREAM_URL, decodeHtmlEntities } from '../lib/radioServer'
 import { OnAirBadge } from '../components/OnAirBadge'
 import { Equalizer } from '../components/Equalizer'
 import { useAudioAnalyser } from '../lib/useAudioAnalyser'
@@ -14,28 +13,13 @@ import { useAudioAnalyser } from '../lib/useAudioAnalyser'
 // anchor timestamp), which never reliably seeked on iOS/WebKit — a live
 // stream structurally can't have that bug, there is nothing to seek.
 // HTTPS via nginx + Let's Encrypt on the VPS, fronting Icecast — plain
-// http:// here was silently blocked as mixed content by the browser
-// since the app itself is served over https://, which looked like
-// "nothing works" with no visible error. sslip.io is a free wildcard DNS
-// that resolves <ip-with-dashes>.sslip.io back to that literal IP, which
-// is enough for Let's Encrypt's HTTP-01 challenge — no real domain needed.
-const STREAM_HOST = 'https://159-194-234-135.sslip.io'
-const STREAM_URL = `${STREAM_HOST}/radio`
-
-// Icecast's status-json.xsl escapes non-ASCII in the title as numeric HTML
-// entities (e.g. "Б" -> "&#1041;") — that's XML-safe encoding, not actual
-// HTML, so it comes through as literal "&#1041;" text rather than being
-// decoded automatically. Routing it through the browser's own HTML parser
-// (never inserted into the live DOM) decodes it correctly for any entity,
-// not just the numeric ones Icecast happens to use today.
-function decodeHtmlEntities(text: string): string {
-  const el = document.createElement('textarea')
-  el.innerHTML = text
-  return el.value
-}
+// http:// was silently blocked as mixed content by the browser since the
+// app itself is served over https://, which looked like "nothing works"
+// with no visible error. sslip.io is a free wildcard DNS that resolves
+// <ip-with-dashes>.sslip.io back to that literal IP, enough for Let's
+// Encrypt's HTTP-01 challenge without owning a real domain.
 
 export function RadioScreen() {
-  const [entries, setEntries] = useState<PlaylistEntry[]>([])
   const [userStarted, setUserStarted] = useState(false)
   const [isPaused, setIsPaused] = useState(true)
   // Connecting to a live stream isn't instant (DNS + TLS + TCP + enough
@@ -74,25 +58,7 @@ export function RadioScreen() {
   // either invocation yields, so the second call sees it immediately.
   const connectingRef = useRef(false)
 
-  // Playlist is fetched purely for display (art/next-up etc. if ever
-  // needed) — it no longer drives playback at all, so edits in the admin
-  // library can be shown immediately without touching what's audible.
-  async function refreshEntries() {
-    setEntries(await fetchPlaylist())
-  }
-
   useEffect(() => {
-    refreshEntries()
-
-    const channel = supabase
-      .channel('radio-room')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'playlist_items' }, refreshEntries)
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({ joined_at: new Date().toISOString() })
-        }
-      })
-
     // Icecast exposes the currently-playing title itself — poll it instead
     // of trying to derive "now playing" from playlist position, since the
     // server (Liquidsoap) is the only thing that actually knows where in
@@ -179,7 +145,6 @@ export function RadioScreen() {
     audio?.addEventListener('ended', handleAudioError)
 
     return () => {
-      supabase.removeChannel(channel)
       clearInterval(nowPlayingTimer)
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       audio?.removeEventListener('waiting', handleWaiting)
@@ -293,8 +258,6 @@ export function RadioScreen() {
     navigator.mediaSession.playbackState = userStarted && !isPaused ? 'playing' : 'paused'
   }, [userStarted, isPaused])
 
-  const nextEntry = entries.length > 0 ? entries[0] : undefined
-
   return (
     <div className="radio-screen">
       <div className="radio-screen__header">
@@ -324,12 +287,6 @@ export function RadioScreen() {
 
       {connectError && (
         <div className="radio-screen__error">Не удалось подключиться. Нажмите play, чтобы попробовать снова.</div>
-      )}
-
-      {nextEntry && (
-        <div className="radio-screen__next">
-          В ЭФИРЕ 24/7 • {entries.length} треков в ротации
-        </div>
       )}
 
       <audio ref={audioRef} crossOrigin="anonymous" preload="none" />

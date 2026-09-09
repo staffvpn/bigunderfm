@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { supabase } from '../lib/supabase'
 import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
 import { audioContentType, buildTrackFilePath } from '../lib/storagePath'
+import { formatDuration } from '../lib/format'
+
+const FILE_INPUT_ID = 'admin-library-file-input'
 
 export function AdminLibrary() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
@@ -200,17 +203,36 @@ export function AdminLibrary() {
     ? dragOrderIds.map((id) => entries.find((e) => e.track.id === id)).filter((e): e is PlaylistEntry => !!e)
     : entries
 
+  // "В ротации" reflects what's actually broadcasting right now (enabled
+  // tracks only) — computed from data already on hand rather than a
+  // second fetch, since `entries` here already includes every track
+  // (admins need to see and re-enable disabled ones too).
+  const rotationEntries = entries.filter((e) => e.track.isEnabled)
+
   return (
     <div className="admin-library">
       <h2>БИБЛИОТЕКА</h2>
+
+      <p className="admin-library__rotation-summary">
+        В ЭФИРЕ 24/7 • {rotationEntries.length} треков в ротации •{' '}
+        {formatDuration(rotationEntries.reduce((sum, e) => sum + e.track.durationSeconds, 0))}
+      </p>
+
+      <label
+        htmlFor={FILE_INPUT_ID}
+        className={`admin-library__upload-button${uploading ? ' is-disabled' : ''}`}
+      >
+        {uploading ? 'ЗАГРУЖАЮ...' : 'ВЫБРАТЬ ФАЙЛЫ'}
+      </label>
       <input
+        id={FILE_INPUT_ID}
+        className="admin-library__file-input"
         type="file"
         accept="audio/mpeg,audio/mp4,audio/wav"
         multiple
         disabled={uploading}
         onChange={(e) => handleFiles(e.target.files)}
       />
-      {uploading && <p>Загрузка…</p>}
       <ul className="admin-library__results">
         {results.map((line, i) => (
           <li key={i}>{line}</li>
@@ -224,22 +246,26 @@ export function AdminLibrary() {
             data-track-id={entry.track.id}
             className={dragOrderIds && draggingIdRef.current === entry.track.id ? 'is-dragging' : ''}
           >
-            <span
-              className="drag-handle"
-              onPointerDown={(e) => handleHandlePointerDown(e, entry.track.id)}
-              onPointerMove={handleHandlePointerMove}
-              onPointerUp={handleHandlePointerUp}
-              onPointerCancel={handleHandlePointerUp}
-            >
-              ≡
-            </span>
-            <span className="admin-library__label">
-              {entry.position}. {entry.track.artist} — {entry.track.title}
-            </span>
-            <button onClick={() => handleToggle(entry.track.id, entry.track.isEnabled)}>
-              {entry.track.isEnabled ? 'Выключить' : 'Включить'}
-            </button>
-            <button onClick={() => handleDelete(entry.track.id)}>Удалить</button>
+            <div className="admin-library__row">
+              <span
+                className="drag-handle"
+                onPointerDown={(e) => handleHandlePointerDown(e, entry.track.id)}
+                onPointerMove={handleHandlePointerMove}
+                onPointerUp={handleHandlePointerUp}
+                onPointerCancel={handleHandlePointerUp}
+              >
+                ≡
+              </span>
+              <span className="admin-library__label">
+                {entry.position}. {entry.track.artist} — {entry.track.title}
+              </span>
+            </div>
+            <div className="admin-library__actions">
+              <button onClick={() => handleToggle(entry.track.id, entry.track.isEnabled)}>
+                {entry.track.isEnabled ? 'Выключить' : 'Включить'}
+              </button>
+              <button onClick={() => handleDelete(entry.track.id)}>Удалить</button>
+            </div>
           </li>
         ))}
       </ul>
