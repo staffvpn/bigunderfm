@@ -66,6 +66,14 @@ button {
   inset: 0;
   background-color: var(--color-bg);
   background-size: cover;
+  /* No-repeat is load-bearing here, not just tidy default-overriding: a
+     pixel offset added on top of a percentage position (below) can push
+     past the point where a cover-sized image still fully spans the
+     element on a short/tall viewport — without this, that sliver of
+     uncovered edge falls back to the browser's default of tiling a
+     second copy of the image into the gap instead of just showing the
+     plain background-color fallback there. */
+  background-repeat: no-repeat;
   /* Nudged up 20px from dead-center per request — shifts the crop window
      toward the lower part of the source image. */
   background-position: center calc(50% + 20px);
