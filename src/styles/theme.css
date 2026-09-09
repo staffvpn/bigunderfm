@@ -74,9 +74,10 @@ button {
      second copy of the image into the gap instead of just showing the
      plain background-color fallback there. */
   background-repeat: no-repeat;
-  /* Nudged up 20px from dead-center per request — shifts the crop window
-     toward the lower part of the source image. */
-  background-position: center calc(50% + 20px);
+  /* Nudged up from dead-center per request — a bigger number here shifts
+     the crop window further toward the lower part of the source image,
+     which visually reads as the photo sliding further up in the frame. */
+  background-position: center calc(50% + 50px);
 }
 
 /* Sits between the image and the readable content — without it, a bright
