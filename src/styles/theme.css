@@ -592,6 +592,53 @@ button {
   margin: 0 0 16px;
 }
 
+.admin-dashboard__storage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-surface-2);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.admin-dashboard__storage-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.admin-dashboard__storage-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--color-muted);
+}
+
+.admin-dashboard__storage-value {
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-dashboard__storage-bar {
+  height: 6px;
+  background: var(--color-surface-2);
+  overflow: hidden;
+}
+
+.admin-dashboard__storage-bar-fill {
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 400ms ease-out;
+}
+
+.admin-dashboard__storage-bar-fill--warning {
+  background: #ff4d4d;
+}
+
 .admin-dashboard__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

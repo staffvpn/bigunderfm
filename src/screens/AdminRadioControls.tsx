@@ -2,8 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
 import { fetchIcecastStatus, type IcecastStatus } from '../lib/radioServer'
-import { formatDuration, formatElapsedSince } from '../lib/format'
+import { fetchStorageUsage, type StorageUsage } from '../lib/storageUsage'
+import { formatDuration, formatElapsedSince, formatBytes } from '../lib/format'
 import { useListenerCount } from '../lib/useListenerCount'
+
+// Above this fraction of the free plan's 1 GB Storage cap, flag it —
+// uploads will start hard-failing once the limit is actually hit, so this
+// needs to be visible well before that, not discovered as an upload error.
+const STORAGE_WARNING_THRESHOLD = 0.85
 
 const STATUS_POLL_MS = 5000
 // A single failed poll is routine (a request can just drop) — only flag
@@ -32,6 +38,7 @@ export function AdminRadioControls() {
   // and-forth needed visibility into.
   const appOpenCount = useListenerCount()
   const failureStreakRef = useRef(0)
+  const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null)
 
   async function reloadPlaylist() {
     setEntries(await fetchPlaylist())
@@ -39,6 +46,10 @@ export function AdminRadioControls() {
 
   useEffect(() => {
     reloadPlaylist()
+    // Storage usage doesn't change second-to-second like the rest of this
+    // dashboard — one fetch per visit to the tab is enough, not worth
+    // polling on the same 5s clock as the live stream stats.
+    fetchStorageUsage().then(setStorageUsage)
 
     async function poll() {
       const result = await fetchIcecastStatus()
@@ -75,6 +86,8 @@ export function AdminRadioControls() {
 
   const trackCount = entries.length
   const totalSeconds = entries.reduce((sum, e) => sum + e.track.durationSeconds, 0)
+  const storagePercent = storageUsage ? storageUsage.usedBytes / storageUsage.limitBytes : null
+  const storageLow = storagePercent !== null && storagePercent >= STORAGE_WARNING_THRESHOLD
 
   return (
     <div className="admin-radio-controls">
@@ -83,6 +96,27 @@ export function AdminRadioControls() {
       {serverDown && (
         <p className="admin-dashboard__warning">⚠ Сервер вещания не отвечает — эфир может быть прерван.</p>
       )}
+      {storageLow && (
+        <p className="admin-dashboard__warning">
+          ⚠ Хранилище почти заполнено ({Math.round(storagePercent! * 100)}%) — скоро понадобится платный тариф
+          Supabase, иначе загрузка новых треков перестанет работать.
+        </p>
+      )}
+
+      <div className="admin-dashboard__storage">
+        <div className="admin-dashboard__storage-row">
+          <span className="admin-dashboard__storage-label">Хранилище (бесплатный лимит)</span>
+          <span className="admin-dashboard__storage-value">
+            {storageUsage ? `${formatBytes(storageUsage.usedBytes)} / ${formatBytes(storageUsage.limitBytes)}` : '—'}
+          </span>
+        </div>
+        <div className="admin-dashboard__storage-bar">
+          <div
+            className={`admin-dashboard__storage-bar-fill${storageLow ? ' admin-dashboard__storage-bar-fill--warning' : ''}`}
+            style={{ width: `${storagePercent !== null ? Math.min(100, storagePercent * 100) : 0}%` }}
+          />
+        </div>
+      </div>
 
       <div className="admin-dashboard__grid">
         <div className="admin-dashboard__tile">

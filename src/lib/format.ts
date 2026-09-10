@@ -26,3 +26,10 @@ export function formatClock(totalSeconds: number): string {
   const ss = String(seconds).padStart(2, '0')
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`
 }
+
+/** "384 МБ", "1.20 ГБ" — for storage-quota display. */
+export function formatBytes(bytes: number): string {
+  const mb = bytes / (1024 * 1024)
+  if (mb >= 1024) return `${(mb / 1024).toFixed(2)} ГБ`
+  return `${mb.toFixed(0)} МБ`
+}
