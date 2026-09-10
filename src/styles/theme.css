@@ -62,12 +62,21 @@ button {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  /* space-between spreads any leftover height across the gaps instead of
-     it all landing as unused space at the bottom — gap still guarantees a
-     minimum so nothing ever touches on a short/cramped viewport. */
-  justify-content: space-between;
+  /* flex-start + a dedicated flexible spacer (see .radio-screen__spacer,
+     placed right before the play button) rather than space-between —
+     space-between spread ALL of any leftover screen height evenly into
+     every gap, including the ones right around the cover image, which
+     read as too much air directly above/below the picture. This keeps
+     the tagline/cover/meta-row cluster tight and pushes any leftover
+     height to the one place it doesn't hurt the layout. */
+  justify-content: flex-start;
   gap: 10px;
   padding: 20px 20px 90px;
+}
+
+.radio-screen__spacer {
+  flex: 1;
+  min-height: 10px;
 }
 
 .radio-screen__header {

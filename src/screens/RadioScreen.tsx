@@ -357,6 +357,8 @@ export function RadioScreen() {
           <span className="radio-screen__duration">{formatClock(clockSeconds)}</span>
         </div>
 
+        <div className="radio-screen__spacer" aria-hidden="true" />
+
         <button
           className={`radio-screen__play${isBuffering ? ' radio-screen__play--buffering' : ''}`}
           onClick={handlePlayClick}
