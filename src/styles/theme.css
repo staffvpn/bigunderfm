@@ -132,6 +132,7 @@ button {
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 3px;
+  margin-bottom: 4px;
 }
 
 /* The poster-style hero — this replaced a square cover-art image
@@ -181,10 +182,18 @@ button {
   background: linear-gradient(180deg, rgba(21, 21, 21, 0.8) 0%, rgba(21, 21, 21, 0.15) 55%, rgba(21, 21, 21, 0) 100%);
 }
 
-.radio-screen__cover-title {
+/* Wraps artist + title together above the scrim — the artist line used to
+   sit on its own above the whole cover and read as orphaned/disconnected
+   once the title moved onto the image; this puts them back together as
+   one paired unit, both on the picture, same as the original poster
+   layout before the square-cover redesign. */
+.radio-screen__cover-text {
   position: relative;
   z-index: 1;
   padding: 18px;
+}
+
+.radio-screen__cover-title {
   font-size: clamp(24px, 9vw, 56px);
   line-height: 0.96;
   font-weight: 900;

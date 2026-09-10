@@ -328,7 +328,6 @@ export function RadioScreen() {
           <OnAirBadge isPlaying={userStarted && !isPaused && !isBuffering} />
         </div>
 
-        <div className="radio-screen__artist">{nowPlaying?.artist ?? '—'}</div>
         <div className="radio-screen__tagline">LOCAL SELECTS</div>
 
         <div
@@ -336,10 +335,13 @@ export function RadioScreen() {
           style={background ? { backgroundImage: `url(${background})` } : undefined}
         >
           <div className="radio-screen__cover-scrim" aria-hidden="true" />
-          <div
-            className={`radio-screen__cover-title${showConnecting ? ' radio-screen__cover-title--status' : ''}`}
-          >
-            {showConnecting ? 'Подключение...' : (nowPlaying?.title ?? 'Загрузка...')}
+          <div className="radio-screen__cover-text">
+            <div className="radio-screen__artist">{nowPlaying?.artist ?? '—'}</div>
+            <div
+              className={`radio-screen__cover-title${showConnecting ? ' radio-screen__cover-title--status' : ''}`}
+            >
+              {showConnecting ? 'Подключение...' : (nowPlaying?.title ?? 'Загрузка...')}
+            </div>
           </div>
         </div>
 
