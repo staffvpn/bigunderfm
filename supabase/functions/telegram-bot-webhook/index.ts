@@ -132,10 +132,36 @@ async function processAudioMessage(message: TelegramMessage, audio: TelegramAudi
     return
   }
 
+  // Telegram's own Bot API (api.telegram.org) hard-caps file *downloads*
+  // at 20MB for every bot, regardless of what the bot account or Storage
+  // bucket allows — this isn't a limit of ours and isn't tunable from
+  // here. Checked against the size Telegram already sent in the message
+  // itself (more reliable than waiting for getFile to fail and pattern-
+  // matching its error text, which could change wording) — surfaced
+  // precisely so this doesn't look identical to an actual outage and send
+  // someone chasing the wrong problem.
+  const TELEGRAM_BOT_API_DOWNLOAD_LIMIT = 20 * 1024 * 1024
+  if (audio.file_size && audio.file_size > TELEGRAM_BOT_API_DOWNLOAD_LIMIT) {
+    await sendMessage(
+      chatId,
+      '🚨 Файл больше 20 МБ — это лимит самого Telegram на скачивание файлов ботом, в коде это не обойти. ' +
+        'Загрузи через вкладку "Библиотека" в приложении — там ограничение 50 МБ.',
+    )
+    return
+  }
+
   const fileInfo = await callTelegram('getFile', { file_id: audio.file_id })
   const telegramFilePath = fileInfo?.result?.file_path
   if (!telegramFilePath) {
-    await sendMessage(chatId, 'Не получилось скачать файл из Telegram.')
+    // Same 20MB cap can still bite even when Telegram didn't report
+    // file_size up front — fall back to matching getFile's own error text.
+    const tooBig = typeof fileInfo?.description === 'string' && /too big/i.test(fileInfo.description)
+    await sendMessage(
+      chatId,
+      tooBig
+        ? '🚨 Файл больше 20 МБ — это лимит самого Telegram на скачивание ботом, обойти нельзя. Загрузи через вкладку "Библиотека" в приложении, там ограничение 50 МБ.'
+        : 'Не получилось скачать файл из Telegram.',
+    )
     return
   }
 
