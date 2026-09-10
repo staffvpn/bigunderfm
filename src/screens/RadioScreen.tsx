@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { STREAM_HOST, STREAM_URL, decodeHtmlEntities } from '../lib/radioServer'
 import { pickNextBackground } from '../lib/backgrounds'
+import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
+import { formatClock } from '../lib/format'
 import { OnAirBadge } from '../components/OnAirBadge'
-import { Equalizer } from '../components/Equalizer'
-import { useAudioAnalyser } from '../lib/useAudioAnalyser'
 
 interface BackgroundLayers {
   a: string | undefined
@@ -26,6 +26,10 @@ interface BackgroundLayers {
 // <ip-with-dashes>.sslip.io back to that literal IP, enough for Let's
 // Encrypt's HTTP-01 challenge without owning a real domain.
 
+function normalize(s: string): string {
+  return s.trim().toLowerCase()
+}
+
 export function RadioScreen() {
   const [userStarted, setUserStarted] = useState(false)
   const [isPaused, setIsPaused] = useState(true)
@@ -36,6 +40,11 @@ export function RadioScreen() {
   const [isBuffering, setIsBuffering] = useState(false)
   const [nowPlaying, setNowPlaying] = useState<{ artist: string; title: string } | null>(null)
   const [connectError, setConnectError] = useState(false)
+  // Loaded purely to find the current track's own duration and what's
+  // next up — playback itself never depended on this (Liquidsoap is the
+  // only thing that actually knows where in the broadcast we are), it's
+  // matched against nowPlaying below by title/artist.
+  const [entries, setEntries] = useState<PlaylistEntry[]>([])
   // A random poster image from src/assets/backgrounds/ behind everything,
   // re-rolled whenever the track actually changes (see the effect below
   // keyed on nowPlaying?.title) — purely decorative/mood, not tied to any
@@ -50,7 +59,6 @@ export function RadioScreen() {
     active: 'a',
   }))
   const audioRef = useRef<HTMLAudioElement>(null)
-  const { analyser, resume: resumeAnalyser } = useAudioAnalyser(audioRef)
 
   // isPausedRef mirrors the isPaused state but is readable from the
   // mount-once effect's closures below without going stale — those
@@ -79,6 +87,8 @@ export function RadioScreen() {
   const connectingRef = useRef(false)
 
   useEffect(() => {
+    fetchPlaylist().then(setEntries)
+
     // Icecast exposes the currently-playing title itself — poll it instead
     // of trying to derive "now playing" from playlist position, since the
     // server (Liquidsoap) is the only thing that actually knows where in
@@ -186,11 +196,6 @@ export function RadioScreen() {
     setIsPaused(!playing)
 
     if (!playing) {
-      // Still safe/cheap to call here even though this branch doesn't
-      // touch src — first-ever interaction being a pause (e.g. a stray
-      // Media Session action) is an edge case, not one worth special-
-      // casing out.
-      resumeAnalyser()
       // An explicit pause cancels any in-flight reconnect attempt — a
       // drop-triggered retry landing a second after the user paused would
       // otherwise silently start the stream back up underneath them.
@@ -237,23 +242,6 @@ export function RadioScreen() {
     } else {
       audio.load()
     }
-
-    // Tap the Web Audio graph AFTER the element already has a resource
-    // attached, not before (as this did until now) — on the very first
-    // ever play, `resumeAnalyser()` used to run while `audio.src` was
-    // still empty, and createMediaElementSource()'d an element with
-    // nothing assigned to it yet. Some browsers' analyser only starts
-    // receiving real decoded samples if the element already had a
-    // resource at tap-creation time; before the live-stream rewrite, src
-    // was always already set by the time this ran (the old virtual-
-    // timeline logic assigned it well before any click), which is very
-    // likely why the equalizer used to react to real audio and stopped
-    // once src started getting assigned inside this same click instead.
-    // Still fully synchronous — no await between here and audio.play()
-    // below — so the user-gesture requirement for AudioContext.resume()
-    // is untouched by the reorder.
-    resumeAnalyser()
-
     audio.play().catch(() => {})
   }
 
@@ -309,6 +297,26 @@ export function RadioScreen() {
     })
   }, [nowPlaying?.title])
 
+  // Matches Icecast's reported "artist - title" string back to a row in
+  // our own playlist so the current track's real duration and what's next
+  // in the (strictly sequential, never-shuffled) rotation can be shown —
+  // Icecast itself only ever exposes the title text, never a position or
+  // duration. Best-effort: if a track's ID3-derived title/artist doesn't
+  // match the DB row closely enough, this just quietly shows nothing
+  // rather than guessing wrong.
+  const currentEntry = nowPlaying
+    ? entries.find((e) => {
+        const dbCombined = normalize(`${e.track.artist} - ${e.track.title}`)
+        const liveCombined = normalize(`${nowPlaying.artist} - ${nowPlaying.title}`)
+        return dbCombined === liveCombined || normalize(e.track.title) === normalize(nowPlaying.title)
+      })
+    : undefined
+  const currentIndex = currentEntry ? entries.findIndex((e) => e.track.id === currentEntry.track.id) : -1
+  const nextEntry = currentIndex >= 0 && entries.length > 0 ? entries[(currentIndex + 1) % entries.length] : undefined
+
+  const coverImage = bgLayers[bgLayers.active]
+  const showConnecting = userStarted && !isPaused && isBuffering
+
   return (
     <div className="radio-screen">
       <div
@@ -330,13 +338,25 @@ export function RadioScreen() {
         </div>
 
         <div className="radio-screen__artist">{nowPlaying?.artist ?? '—'}</div>
-        <div className="radio-screen__title">
-          {userStarted && !isPaused && isBuffering
-            ? 'Подключение...'
-            : (nowPlaying?.title ?? 'Загрузка...')}
+        <div className={`radio-screen__title${showConnecting ? ' radio-screen__title--status' : ''}`}>
+          {showConnecting ? 'Подключение...' : (nowPlaying?.title ?? 'Загрузка...')}
         </div>
+        <div className="radio-screen__tagline">LOCAL SELECTS</div>
 
-        <Equalizer analyser={analyser} isPlaying={userStarted && !isPaused && !isBuffering} />
+        <div
+          className="radio-screen__cover"
+          style={coverImage ? { backgroundImage: `url(${coverImage})` } : undefined}
+          aria-hidden="true"
+        />
+
+        <div className="radio-screen__meta-row">
+          <span className="radio-screen__next-label">
+            {nextEntry ? `следующий трек: ${nextEntry.track.artist} — ${nextEntry.track.title}` : ''}
+          </span>
+          <span className="radio-screen__duration">
+            {currentEntry ? formatClock(currentEntry.track.durationSeconds) : ''}
+          </span>
+        </div>
 
         <button
           className={`radio-screen__play${isBuffering ? ' radio-screen__play--buffering' : ''}`}
