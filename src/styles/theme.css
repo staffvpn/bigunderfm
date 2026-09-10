@@ -230,7 +230,11 @@ button {
 
 .radio-screen__meta-row {
   display: flex;
-  align-items: flex-end;
+  /* Centered rather than bottom-aligned — the next-track label is two
+     short lines stacked next to one big duration number, and flex-end
+     left the label's own top line sitting noticeably higher than the
+     number instead of reading as one level row. */
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
