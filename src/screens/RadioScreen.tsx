@@ -330,7 +330,19 @@ export function RadioScreen() {
       })
     : undefined
   const currentIndex = currentEntry ? entries.findIndex((e) => e.track.id === currentEntry.track.id) : -1
-  const nextEntry = currentIndex >= 0 && entries.length > 0 ? entries[(currentIndex + 1) % entries.length] : undefined
+
+  // JINGLE 2 is deliberately NOT one of `entries` (it's not a numbered
+  // rotation slot, see sync-playlist.sh on the VPS) — while it's actually
+  // playing, nowPlaying never matches anything in entries and currentIndex
+  // comes back -1, which used to blank out "next track" entirely for the
+  // jingle's ~11 seconds. Remembering the last real match and falling
+  // back to it keeps "next" pointing at whatever comes after the jingle
+  // (the correct answer) instead of disappearing every third track.
+  const lastKnownIndexRef = useRef(-1)
+  if (currentIndex >= 0) lastKnownIndexRef.current = currentIndex
+  const effectiveIndex = currentIndex >= 0 ? currentIndex : lastKnownIndexRef.current
+  const nextEntry =
+    effectiveIndex >= 0 && entries.length > 0 ? entries[(effectiveIndex + 1) % entries.length] : undefined
 
   const showConnecting = userStarted && !isPaused && isBuffering
   const clockSeconds = currentEntry ? Math.min(elapsedSeconds, currentEntry.track.durationSeconds) : elapsedSeconds
