@@ -141,41 +141,11 @@ button {
    (some real titles here are compound, e.g. "AK420, BIGUNDER –
    UNBREAKABLE") can take before it'd otherwise threaten the fixed
    one-screen layout. */
-.radio-screen__title {
-  flex: 1;
-  min-height: 0;
-  font-size: clamp(32px, 12vw, 72px);
-  line-height: 0.94;
-  font-weight: 900;
-  letter-spacing: -0.02em;
-  text-transform: uppercase;
-  display: -webkit-box;
-  -webkit-line-clamp: 5;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  /* A real track title is almost always multiple words, which wrap freely
-     between them — "Подключение..." (below) is one unbroken word that,
-     at this clamp()'d hero size, ran straight past the edge of the
-     screen with nothing to break on. Applies to both states; harmless
-     for normal titles since word-boundary wrapping is still preferred
-     first, this only kicks in when a single word wouldn't otherwise fit. */
-  overflow-wrap: break-word;
-}
-
-/* The transient "Подключение..." status was rendering at the same
-   hero clamp() size as an actual track title — a single, long, unbroken
-   word at up to 72px reliably ran off the edge of the screen. It's a
-   status message, not a title; it never needed hero sizing. */
-.radio-screen__title--status {
-  font-size: clamp(20px, 7vw, 32px);
-  -webkit-line-clamp: 2;
-}
-
-/* Small print directly under the title, per the reference mock — Montserrat
+/* Small print directly under the artist, per the reference mock — Montserrat
    Thin (weight 100, loaded specifically for this) so it reads as a quiet
-   station credit line, not competing with the title above it. White and
-   sized up from the original 11px/muted-gray per request — it was
-   originally styled like a footnote, not a deliberate design element. */
+   station credit line, not competing with the title. White and sized up
+   from the original 11px/muted-gray per request — it was originally
+   styled like a footnote, not a deliberate design element. */
 .radio-screen__tagline {
   font-size: 15px;
   font-weight: 100;
@@ -184,17 +154,60 @@ button {
   color: var(--color-text);
 }
 
-/* Square cover art, per the reference mock — sits between the tagline and
-   the next-track/duration row. There's no full-bleed backdrop behind it
-   any more (removed per request — this square is the only image on
-   screen now), so .radio-screen is back to a plain flat background. */
+/* Square cover art, per the reference mock. There's no full-bleed backdrop
+   behind it any more (removed per request — this square is the only
+   image on screen now), so .radio-screen is back to a plain flat
+   background. position: relative + overflow: hidden contain the scrim
+   and title below to exactly this square, not the whole screen. */
 .radio-screen__cover {
+  position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
+  overflow: hidden;
   background-color: var(--color-surface);
   background-size: cover;
   background-position: center;
   border: 1px solid var(--color-surface-2);
+}
+
+/* Back to sitting directly on the image (as it did before the square-
+   cover redesign), rather than on its own line above it — per request,
+   "like it was before, big and white, on top of the picture". Darkens
+   top-to-transparent behind it so white text stays legible regardless of
+   what's directly behind it in the photo. */
+.radio-screen__cover-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(21, 21, 21, 0.8) 0%, rgba(21, 21, 21, 0.15) 55%, rgba(21, 21, 21, 0) 100%);
+}
+
+.radio-screen__cover-title {
+  position: relative;
+  z-index: 1;
+  padding: 18px;
+  font-size: clamp(24px, 9vw, 56px);
+  line-height: 0.96;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  color: var(--color-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* A real track title is almost always multiple words, which wrap freely
+     between them — "Подключение..." (below) is one unbroken word that
+     otherwise ran straight past the edge with nothing to break on. */
+  overflow-wrap: break-word;
+}
+
+/* The transient "Подключение..." status was rendering at the same hero
+   size as an actual track title — a single, long, unbroken word reliably
+   ran off the edge. It's a status message, not a title; it never needed
+   hero sizing. */
+.radio-screen__cover-title--status {
+  font-size: clamp(18px, 6vw, 26px);
+  -webkit-line-clamp: 2;
 }
 
 .radio-screen__meta-row {
@@ -207,11 +220,21 @@ button {
 .radio-screen__next-label {
   flex: 1;
   min-width: 0;
-  color: var(--color-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.radio-screen__next-label-tag {
+  color: var(--color-muted);
+}
+
+.radio-screen__next-label-name {
+  color: var(--color-text);
   /* Wraps in full rather than the ellipsis-truncating this used to do —
      a long next-track name is meant to be fully readable, not cut off. */
   overflow-wrap: anywhere;

@@ -329,21 +329,29 @@ export function RadioScreen() {
         </div>
 
         <div className="radio-screen__artist">{nowPlaying?.artist ?? '—'}</div>
-        <div className={`radio-screen__title${showConnecting ? ' radio-screen__title--status' : ''}`}>
-          {showConnecting ? 'Подключение...' : (nowPlaying?.title ?? 'Загрузка...')}
-        </div>
         <div className="radio-screen__tagline">LOCAL SELECTS</div>
 
         <div
           className="radio-screen__cover"
           style={background ? { backgroundImage: `url(${background})` } : undefined}
-          aria-hidden="true"
-        />
+        >
+          <div className="radio-screen__cover-scrim" aria-hidden="true" />
+          <div
+            className={`radio-screen__cover-title${showConnecting ? ' radio-screen__cover-title--status' : ''}`}
+          >
+            {showConnecting ? 'Подключение...' : (nowPlaying?.title ?? 'Загрузка...')}
+          </div>
+        </div>
 
         <div className="radio-screen__meta-row">
-          <span className="radio-screen__next-label">
-            {nextEntry ? `следующий трек: ${nextEntry.track.artist} — ${nextEntry.track.title}` : ''}
-          </span>
+          <div className="radio-screen__next-label">
+            <span className="radio-screen__next-label-tag">Следующий трек:</span>
+            {nextEntry && (
+              <span className="radio-screen__next-label-name">
+                {nextEntry.track.artist} — {nextEntry.track.title}
+              </span>
+            )}
+          </div>
           <span className="radio-screen__duration">{formatClock(clockSeconds)}</span>
         </div>
 
