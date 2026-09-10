@@ -105,6 +105,20 @@ export function RadioScreen() {
     pollNowPlaying()
     const nowPlayingTimer = setInterval(pollNowPlaying, 10000)
 
+    // Mobile webviews throttle (or fully suspend) JS timers while the
+    // screen is locked or the app is backgrounded — the 10s interval
+    // above doesn't reliably catch up on its own once that happens, so a
+    // listener coming back to the app can sit on a long-stale "now
+    // playing" (and, downstream, a frozen "next track" — both come from
+    // this same poll) indefinitely instead of within 10 seconds. Force a
+    // fresh poll the moment the tab/app actually becomes visible again.
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        pollNowPlaying()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     // Background image pool rotates independently of track changes now —
     // every BACKGROUND_ROTATE_MS instead of every track.
     const backgroundTimer = setInterval(() => setBackground(pickNextBackground()), BACKGROUND_ROTATE_MS)
@@ -184,6 +198,7 @@ export function RadioScreen() {
       clearInterval(nowPlayingTimer)
       clearInterval(backgroundTimer)
       clearInterval(clockTimer)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       audio?.removeEventListener('waiting', handleWaiting)
       audio?.removeEventListener('stalled', handleWaiting)
