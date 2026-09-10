@@ -171,13 +171,17 @@ button {
    and title below to exactly this square, not the whole screen. */
 .radio-screen__cover {
   position: relative;
-  width: 100%;
+  /* Breaks out of .radio-screen__content's 20px left/right padding to run
+     edge-to-edge — width: 100% alone stays inside that padding, since
+     percentages resolve against the (already-padded) content box. */
+  width: calc(100% + 40px);
+  margin-left: -20px;
+  margin-right: -20px;
   aspect-ratio: 1 / 1;
   overflow: hidden;
   background-color: var(--color-surface);
   background-size: cover;
   background-position: center;
-  border: 1px solid var(--color-surface-2);
 }
 
 /* Back to sitting directly on the image (as it did before the square-
