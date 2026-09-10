@@ -5,12 +5,6 @@ import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
 import { formatClock } from '../lib/format'
 import { OnAirBadge } from '../components/OnAirBadge'
 
-interface BackgroundLayers {
-  a: string | undefined
-  b: string | undefined
-  active: 'a' | 'b'
-}
-
 // Real, always-on broadcast — Icecast (distribution) + Liquidsoap
 // (scheduling/encoding) running on a dedicated VPS, streaming the shared
 // playlist continuously. Every listener just connects to this URL and
@@ -25,6 +19,8 @@ interface BackgroundLayers {
 // with no visible error. sslip.io is a free wildcard DNS that resolves
 // <ip-with-dashes>.sslip.io back to that literal IP, enough for Let's
 // Encrypt's HTTP-01 challenge without owning a real domain.
+
+const BACKGROUND_ROTATE_MS = 6 * 60 * 60 * 1000
 
 function normalize(s: string): string {
   return s.trim().toLowerCase()
@@ -45,19 +41,18 @@ export function RadioScreen() {
   // only thing that actually knows where in the broadcast we are), it's
   // matched against nowPlaying below by title/artist.
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
-  // A random poster image from src/assets/backgrounds/ behind everything,
-  // re-rolled whenever the track actually changes (see the effect below
-  // keyed on nowPlaying?.title) — purely decorative/mood, not tied to any
-  // specific track's own artwork. Two alternating layers (not one image
-  // swapped in place) — background-image isn't itself a CSS-transitionable
-  // property, so crossfading between images means keeping both the outgoing
-  // and incoming image each on their own layer and animating opacity
-  // between the two layers instead (see .radio-screen__bg-layer).
-  const [bgLayers, setBgLayers] = useState<BackgroundLayers>(() => ({
-    a: pickNextBackground(),
-    b: undefined,
-    active: 'a',
-  }))
+  // Square cover image from src/assets/backgrounds/ — re-rolled on a
+  // 6-hour timer (not per-track; the whole point is a stable "vibe" that
+  // outlasts any one track), per explicit request.
+  const [background, setBackground] = useState<string | undefined>(() => pickNextBackground())
+  // Wall-clock approximation of playback position — resets to 0 the
+  // moment nowPlaying?.title changes, then ticks up once a second. This
+  // is NOT synced to Icecast's real position (nothing exposes that), so
+  // it can be off by up to one metadata poll interval (~10s); good enough
+  // for a glance-at display, clamped to the track's own known duration so
+  // it never visibly runs past the end.
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const trackStartRef = useRef<number | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
 
   // isPausedRef mirrors the isPaused state but is readable from the
@@ -109,6 +104,17 @@ export function RadioScreen() {
     }
     pollNowPlaying()
     const nowPlayingTimer = setInterval(pollNowPlaying, 10000)
+
+    // Background image pool rotates independently of track changes now —
+    // every BACKGROUND_ROTATE_MS instead of every track.
+    const backgroundTimer = setInterval(() => setBackground(pickNextBackground()), BACKGROUND_ROTATE_MS)
+
+    // Local elapsed-time clock — see the state comment above for why this
+    // is an approximation rather than a real synced position.
+    const clockTimer = setInterval(() => {
+      if (trackStartRef.current === null) return
+      setElapsedSeconds((Date.now() - trackStartRef.current) / 1000)
+    }, 1000)
 
     // Reflect the audio element's actual state rather than just the click
     // intent — 'waiting' fires while it's connecting/buffering (including
@@ -176,6 +182,8 @@ export function RadioScreen() {
 
     return () => {
       clearInterval(nowPlayingTimer)
+      clearInterval(backgroundTimer)
+      clearInterval(clockTimer)
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       audio?.removeEventListener('waiting', handleWaiting)
       audio?.removeEventListener('stalled', handleWaiting)
@@ -283,18 +291,13 @@ export function RadioScreen() {
     navigator.mediaSession.playbackState = userStarted && !isPaused ? 'playing' : 'paused'
   }, [userStarted, isPaused])
 
-  // Re-roll the background whenever the track actually changes (not on
-  // every 10s metadata poll — nowPlaying?.title only changes value when
-  // the broadcast genuinely moves to a different track). Loads the new
-  // image onto whichever layer is currently OFF-screen, then flips which
-  // layer is "active" — the CSS transition on .radio-screen__bg-layer's
-  // opacity/transform/filter is what actually animates the swap.
+  // Resets the on-screen clock to 00:00 the moment the broadcast actually
+  // moves to a new track (not on every 10s metadata poll — nowPlaying?.title
+  // only changes value then).
   useEffect(() => {
     if (!nowPlaying?.title) return
-    setBgLayers((prev) => {
-      const idleLayer = prev.active === 'a' ? 'b' : 'a'
-      return { ...prev, [idleLayer]: pickNextBackground(), active: idleLayer }
-    })
+    trackStartRef.current = Date.now()
+    setElapsedSeconds(0)
   }, [nowPlaying?.title])
 
   // Matches Icecast's reported "artist - title" string back to a row in
@@ -314,23 +317,11 @@ export function RadioScreen() {
   const currentIndex = currentEntry ? entries.findIndex((e) => e.track.id === currentEntry.track.id) : -1
   const nextEntry = currentIndex >= 0 && entries.length > 0 ? entries[(currentIndex + 1) % entries.length] : undefined
 
-  const coverImage = bgLayers[bgLayers.active]
   const showConnecting = userStarted && !isPaused && isBuffering
+  const clockSeconds = currentEntry ? Math.min(elapsedSeconds, currentEntry.track.durationSeconds) : elapsedSeconds
 
   return (
     <div className="radio-screen">
-      <div
-        className={`radio-screen__bg-layer${bgLayers.active === 'a' ? ' radio-screen__bg-layer--active' : ''}`}
-        style={bgLayers.a ? { backgroundImage: `url(${bgLayers.a})` } : undefined}
-        aria-hidden="true"
-      />
-      <div
-        className={`radio-screen__bg-layer${bgLayers.active === 'b' ? ' radio-screen__bg-layer--active' : ''}`}
-        style={bgLayers.b ? { backgroundImage: `url(${bgLayers.b})` } : undefined}
-        aria-hidden="true"
-      />
-      <div className="radio-screen__scrim" aria-hidden="true" />
-
       <div className="radio-screen__content">
         <div className="radio-screen__header">
           <span className="radio-screen__station">BIGUNDER FM</span>
@@ -345,7 +336,7 @@ export function RadioScreen() {
 
         <div
           className="radio-screen__cover"
-          style={coverImage ? { backgroundImage: `url(${coverImage})` } : undefined}
+          style={background ? { backgroundImage: `url(${background})` } : undefined}
           aria-hidden="true"
         />
 
@@ -353,9 +344,7 @@ export function RadioScreen() {
           <span className="radio-screen__next-label">
             {nextEntry ? `следующий трек: ${nextEntry.track.artist} — ${nextEntry.track.title}` : ''}
           </span>
-          <span className="radio-screen__duration">
-            {currentEntry ? formatClock(currentEntry.track.durationSeconds) : ''}
-          </span>
+          <span className="radio-screen__duration">{formatClock(clockSeconds)}</span>
         </div>
 
         <button
