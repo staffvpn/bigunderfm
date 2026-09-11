@@ -254,7 +254,7 @@ export function AdminLibrary() {
         onClick={handleShuffle}
         disabled={shuffling || entries.length < 2}
       >
-        {shuffling ? 'ПЕРЕМЕШИВАЮ...' : '🔀 ПЕРЕМЕШАТЬ'}
+        {shuffling ? 'ПЕРЕМЕШИВАЮ...' : 'ПЕРЕМЕШАТЬ'}
       </button>
       <ul className="admin-library__results">
         {results.map((line, i) => (
