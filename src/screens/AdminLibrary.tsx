@@ -9,6 +9,7 @@ const FILE_INPUT_ID = 'admin-library-file-input'
 export function AdminLibrary() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
   const [uploading, setUploading] = useState(false)
+  const [shuffling, setShuffling] = useState(false)
   const [results, setResults] = useState<string[]>([])
   // Local-only visual order while a drag is in progress — the server only
   // hears about it once via commitOrder() on release, not on every move.
@@ -163,6 +164,20 @@ export function AdminLibrary() {
     reload()
   }
 
+  // Fisher-Yates — every permutation of the current order is equally
+  // likely, including "barely changed" ones; nothing here nudges it
+  // toward a more "shuffled-looking" result, same as a real shuffle.
+  async function handleShuffle() {
+    setShuffling(true)
+    const ids = entries.map((e) => e.track.id)
+    for (let i = ids.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[ids[i], ids[j]] = [ids[j], ids[i]]
+    }
+    await commitOrder(ids)
+    setShuffling(false)
+  }
+
   // Pointer Events (not the old HTML5 drag-and-drop attribute this
   // replaced) so dragging by the handle works on touch, not just mouse —
   // native `draggable` never fires on mobile browsers at all.
@@ -233,6 +248,14 @@ export function AdminLibrary() {
         disabled={uploading}
         onChange={(e) => handleFiles(e.target.files)}
       />
+      <button
+        type="button"
+        className="admin-library__shuffle-button"
+        onClick={handleShuffle}
+        disabled={shuffling || entries.length < 2}
+      >
+        {shuffling ? 'ПЕРЕМЕШИВАЮ...' : '🔀 ПЕРЕМЕШАТЬ'}
+      </button>
       <ul className="admin-library__results">
         {results.map((line, i) => (
           <li key={i}>{line}</li>

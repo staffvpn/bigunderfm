@@ -460,6 +460,33 @@ button {
   cursor: default;
 }
 
+/* Outline (not filled) so it doesn't compete with the upload button for
+   attention — shuffling is a secondary, occasional action next to it. */
+.admin-library__shuffle-button {
+  display: inline-block;
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid var(--color-text);
+  padding: 10px 16px;
+  font-weight: 800;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  margin-bottom: 16px;
+  margin-left: 8px;
+}
+
+.admin-library__shuffle-button:active {
+  opacity: 0.8;
+}
+
+.admin-library__shuffle-button:disabled {
+  color: var(--color-muted);
+  border-color: var(--color-muted);
+  cursor: default;
+}
+
 .admin-library__results {
   font-size: 12px;
   color: var(--color-muted);
