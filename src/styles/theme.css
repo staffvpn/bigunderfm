@@ -184,6 +184,19 @@ button {
   background-position: center;
 }
 
+/* Fills the same square as the image background-image would, sitting
+   underneath the scrim + text in DOM order (both position:absolute,
+   default z-index — paint order follows DOM order, so this just needs to
+   come first). object-fit: cover mirrors background-size: cover so a
+   video crops/fills exactly like a photo does, never stretching. */
+.radio-screen__cover-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 /* Back to sitting directly on the image (as it did before the square-
    cover redesign), rather than on its own line above it — per request,
    "like it was before, big and white, on top of the picture". Darkens

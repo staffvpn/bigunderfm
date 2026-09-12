@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { STREAM_HOST, STREAM_URL, decodeHtmlEntities } from '../lib/radioServer'
-import { pickNextBackground } from '../lib/backgrounds'
+import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
 import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
 import { formatClock } from '../lib/format'
 import { OnAirBadge } from '../components/OnAirBadge'
@@ -41,10 +41,10 @@ export function RadioScreen() {
   // only thing that actually knows where in the broadcast we are), it's
   // matched against nowPlaying below by title/artist.
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
-  // Square cover image from src/assets/backgrounds/ — re-rolled on a
-  // 6-hour timer (not per-track; the whole point is a stable "vibe" that
-  // outlasts any one track), per explicit request.
-  const [background, setBackground] = useState<string | undefined>(() => pickNextBackground())
+  // Square cover image OR looping video from src/assets/backgrounds/ —
+  // re-rolled on a 6-hour timer (not per-track; the whole point is a
+  // stable "vibe" that outlasts any one track), per explicit request.
+  const [background, setBackground] = useState<BackgroundItem | undefined>(() => pickNextBackground())
   // Wall-clock approximation of playback position — resets to 0 the
   // moment nowPlaying?.title changes, then ticks up once a second. This
   // is NOT synced to Icecast's real position (nothing exposes that), so
@@ -359,8 +359,27 @@ export function RadioScreen() {
 
         <div
           className="radio-screen__cover"
-          style={background ? { backgroundImage: `url(${background})` } : undefined}
+          style={background?.type === 'image' ? { backgroundImage: `url(${background.src})` } : undefined}
         >
+          {background?.type === 'video' && (
+            // Muted + playsInline + autoPlay is what actually lets mobile
+            // WebViews (Telegram's included) autoplay a video at all —
+            // any sound would get it blocked outright, and without
+            // playsInline iOS forces it fullscreen instead of inline here.
+            // key=src forces a fresh <video> per pick so a shuffle back to
+            // the same clip restarts it from the top rather than reusing
+            // whatever position the old element was left at.
+            <video
+              key={background.src}
+              className="radio-screen__cover-video"
+              src={background.src}
+              autoPlay
+              loop
+              muted
+              playsInline
+              aria-hidden="true"
+            />
+          )}
           <div className="radio-screen__cover-scrim" aria-hidden="true" />
           <div className="radio-screen__cover-text">
             <div className="radio-screen__artist">{nowPlaying?.artist ?? '—'}</div>
