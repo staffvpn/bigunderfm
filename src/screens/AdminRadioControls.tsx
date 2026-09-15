@@ -208,17 +208,6 @@ export function AdminRadioControls() {
         {skipping ? 'ПЕРЕКЛЮЧАЮ...' : 'СЛЕДУЮЩИЙ ТРЕК'}
       </button>
       {skipError && <p className="admin-radio-controls__error">{skipError}</p>}
-
-      <h3 className="admin-radio-controls__subheading">ПЛЕЙЛИСТ</h3>
-      <ul>
-        {entries.map((entry) => (
-          <li key={entry.track.id}>
-            <span className="admin-radio-controls__track-label">
-              {entry.position}. {entry.track.artist} — {entry.track.title}
-            </span>
-          </li>
-        ))}
-      </ul>
     </div>
   )
 }

@@ -3,8 +3,17 @@ import { supabase } from '../lib/supabase'
 import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
 import { audioContentType, buildTrackFilePath } from '../lib/storagePath'
 import { formatDuration } from '../lib/format'
+import { getTelegramUserId } from '../lib/telegram'
 
 const FILE_INPUT_ID = 'admin-library-file-input'
+
+// Shuffle reorders the ENTIRE live rotation, which every other admin also
+// relies on staying predictable — restricted to this one admin's own
+// Telegram account per explicit request, everyone else just doesn't see
+// the button at all (not a real access boundary, just keeps it out of
+// reach of someone who could tap it by accident; RLS/telegram-auth are
+// what actually gate the underlying writes for every admin equally).
+const SHUFFLE_ADMIN_TELEGRAM_ID = 432943377
 
 export function AdminLibrary() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
@@ -16,6 +25,10 @@ export function AdminLibrary() {
   const [dragOrderIds, setDragOrderIds] = useState<string[] | null>(null)
   const draggingIdRef = useRef<string | null>(null)
   const listRef = useRef<HTMLUListElement>(null)
+  // Last known pointer position during a drag, kept fresh even when the
+  // finger/mouse itself has stopped moving (see autoScrollTick below).
+  const dragPointerRef = useRef<{ x: number; y: number } | null>(null)
+  const autoScrollRafRef = useRef<number | null>(null)
 
   async function reload() {
     // includeDisabled: the admin must still see (and be able to re-enable)
@@ -25,6 +38,14 @@ export function AdminLibrary() {
 
   useEffect(() => {
     reload()
+    // Switching tabs away mid-drag unmounts this screen (see App.tsx) —
+    // without this, the auto-scroll rAF loop would keep running against a
+    // gone component, still scrolling whatever tab replaced it.
+    return () => {
+      if (autoScrollRafRef.current !== null) {
+        cancelAnimationFrame(autoScrollRafRef.current)
+      }
+    }
   }, [])
 
   async function handleFiles(files: FileList | null) {
@@ -168,6 +189,11 @@ export function AdminLibrary() {
   // likely, including "barely changed" ones; nothing here nudges it
   // toward a more "shuffled-looking" result, same as a real shuffle.
   async function handleShuffle() {
+    // A confirm gate, on top of the button itself being tucked into the
+    // header (away from the upload/reorder flow most taps happen in) —
+    // this reorders the entire live rotation, not something to trigger by
+    // a stray tap.
+    if (!window.confirm('Перемешать порядок всех треков в эфире? Отменить это будет нельзя.')) return
     setShuffling(true)
     const ids = entries.map((e) => e.track.id)
     for (let i = ids.length - 1; i > 0; i--) {
@@ -178,20 +204,15 @@ export function AdminLibrary() {
     setShuffling(false)
   }
 
-  // Pointer Events (not the old HTML5 drag-and-drop attribute this
-  // replaced) so dragging by the handle works on touch, not just mouse —
-  // native `draggable` never fires on mobile browsers at all.
-  function handleHandlePointerDown(e: ReactPointerEvent, trackId: string) {
-    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-    draggingIdRef.current = trackId
-    setDragOrderIds(entries.map((en) => en.track.id))
-  }
-
-  function handleHandlePointerMove(e: ReactPointerEvent) {
+  // Reorders the local drag preview based on whatever's currently under
+  // the given viewport point — shared between real pointermove events and
+  // the auto-scroll loop below, which needs to keep re-deriving this even
+  // while the pointer itself sits still (the page is moving under it).
+  function updateDragOrderFromPoint(clientX: number, clientY: number) {
     const draggingId = draggingIdRef.current
     if (!draggingId) return
 
-    const overEl = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-track-id]')
+    const overEl = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>('[data-track-id]')
     const overId = overEl?.dataset.trackId
     if (!overId || overId === draggingId) return
 
@@ -207,9 +228,62 @@ export function AdminLibrary() {
     })
   }
 
+  // Holding the drag near the top/bottom edge of the screen scrolls the
+  // page — without this, a long library was only reorderable within
+  // whatever happened to already be on screen, since setPointerCapture +
+  // touch-action: none (on .drag-handle) deliberately block the browser's
+  // own scroll-while-touching during a drag, and there was nothing to
+  // scroll it back. Runs every animation frame for the drag's whole
+  // duration (cheap: a couple of comparisons when not near an edge) rather
+  // than only on pointermove, because pointermove stops firing the moment
+  // the finger itself stops moving — exactly the "held at the edge"
+  // case this exists for.
+  const AUTO_SCROLL_EDGE_PX = 72
+  const AUTO_SCROLL_MAX_PX_PER_FRAME = 16
+
+  function autoScrollTick() {
+    const pointer = dragPointerRef.current
+    if (!pointer || !draggingIdRef.current) {
+      autoScrollRafRef.current = null
+      return
+    }
+    const viewportHeight = window.innerHeight
+    let dy = 0
+    if (pointer.y < AUTO_SCROLL_EDGE_PX) {
+      dy = -AUTO_SCROLL_MAX_PX_PER_FRAME * (1 - pointer.y / AUTO_SCROLL_EDGE_PX)
+    } else if (pointer.y > viewportHeight - AUTO_SCROLL_EDGE_PX) {
+      dy = AUTO_SCROLL_MAX_PX_PER_FRAME * (1 - (viewportHeight - pointer.y) / AUTO_SCROLL_EDGE_PX)
+    }
+    if (dy !== 0) {
+      window.scrollBy(0, dy)
+      updateDragOrderFromPoint(pointer.x, pointer.y)
+    }
+    autoScrollRafRef.current = requestAnimationFrame(autoScrollTick)
+  }
+
+  // Pointer Events (not the old HTML5 drag-and-drop attribute this
+  // replaced) so dragging by the handle works on touch, not just mouse —
+  // native `draggable` never fires on mobile browsers at all.
+  function handleHandlePointerDown(e: ReactPointerEvent, trackId: string) {
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    draggingIdRef.current = trackId
+    dragPointerRef.current = { x: e.clientX, y: e.clientY }
+    setDragOrderIds(entries.map((en) => en.track.id))
+    if (autoScrollRafRef.current === null) {
+      autoScrollRafRef.current = requestAnimationFrame(autoScrollTick)
+    }
+  }
+
+  function handleHandlePointerMove(e: ReactPointerEvent) {
+    if (!draggingIdRef.current) return
+    dragPointerRef.current = { x: e.clientX, y: e.clientY }
+    updateDragOrderFromPoint(e.clientX, e.clientY)
+  }
+
   function handleHandlePointerUp() {
     const finalOrder = dragOrderIds
     draggingIdRef.current = null
+    dragPointerRef.current = null
     setDragOrderIds(null)
     if (finalOrder) commitOrder(finalOrder)
   }
@@ -224,9 +298,31 @@ export function AdminLibrary() {
   // (admins need to see and re-enable disabled ones too).
   const rotationEntries = entries.filter((e) => e.track.isEnabled)
 
+  const isShuffleAdmin = getTelegramUserId() === SHUFFLE_ADMIN_TELEGRAM_ID
+
   return (
     <div className="admin-library">
-      <h2>БИБЛИОТЕКА</h2>
+      <div className="admin-library__header">
+        <h2>БИБЛИОТЕКА</h2>
+        {isShuffleAdmin && (
+          <button
+            type="button"
+            className="admin-library__shuffle-button"
+            onClick={handleShuffle}
+            disabled={shuffling || entries.length < 2}
+            aria-label="Перемешать плейлист"
+            title="Перемешать плейлист"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="16 3 21 3 21 8" />
+              <line x1="4" y1="20" x2="21" y2="3" />
+              <polyline points="21 16 21 21 16 21" />
+              <line x1="15" y1="15" x2="21" y2="21" />
+              <line x1="4" y1="4" x2="9" y2="9" />
+            </svg>
+          </button>
+        )}
+      </div>
 
       <p className="admin-library__rotation-summary">
         В ЭФИРЕ 24/7 • {rotationEntries.length} треков в ротации •{' '}
@@ -248,14 +344,6 @@ export function AdminLibrary() {
         disabled={uploading}
         onChange={(e) => handleFiles(e.target.files)}
       />
-      <button
-        type="button"
-        className="admin-library__shuffle-button"
-        onClick={handleShuffle}
-        disabled={shuffling || entries.length < 2}
-      >
-        {shuffling ? 'ПЕРЕМЕШИВАЮ...' : 'ПЕРЕМЕШАТЬ'}
-      </button>
       <ul className="admin-library__results">
         {results.map((line, i) => (
           <li key={i}>{line}</li>

@@ -474,21 +474,38 @@ button {
   cursor: default;
 }
 
-/* Outline (not filled) so it doesn't compete with the upload button for
-   attention — shuffling is a secondary, occasional action next to it. */
+.admin-library__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+/* The h2's own bottom margin (shared with Управление's heading) would
+   otherwise throw off align-items: center against the icon button next to
+   it — the row itself carries that spacing instead, above. */
+.admin-library__header h2 {
+  margin-bottom: 0;
+}
+
+/* Small, outline (not filled), tucked into the header away from the
+   upload/reorder flow — deliberately out of the way so it isn't tapped by
+   accident; it reorders the ENTIRE live rotation. Icon-only rather than a
+   labeled button, same visual language as the play/pause glyphs on Эфир. */
 .admin-library__shuffle-button {
-  display: inline-block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
   background: transparent;
   color: var(--color-text);
-  border: 1px solid var(--color-text);
-  padding: 10px 16px;
-  font-weight: 800;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  border: 1px solid var(--color-muted);
+  border-radius: 50%;
+  padding: 0;
   cursor: pointer;
-  margin-bottom: 16px;
-  margin-left: 8px;
 }
 
 .admin-library__shuffle-button:active {
@@ -497,7 +514,7 @@ button {
 
 .admin-library__shuffle-button:disabled {
   color: var(--color-muted);
-  border-color: var(--color-muted);
+  border-color: var(--color-surface-2);
   cursor: default;
 }
 
