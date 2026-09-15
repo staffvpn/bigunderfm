@@ -680,6 +680,52 @@ button {
   background: #ff4d4d;
 }
 
+.admin-dashboard__show-name {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-surface-2);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.admin-dashboard__show-name-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--color-muted);
+}
+
+.admin-dashboard__show-name-row {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-dashboard__show-name-row input {
+  flex: 1;
+  min-width: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-muted);
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-dashboard__show-name-row input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.admin-dashboard__show-name-status {
+  color: var(--color-muted);
+  font-size: 12px;
+  margin: 0;
+}
+
 .admin-dashboard__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

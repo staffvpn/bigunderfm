@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
 import { fetchIcecastStatus, type IcecastStatus } from '../lib/radioServer'
 import { fetchStorageUsage, type StorageUsage } from '../lib/storageUsage'
+import { fetchShowName, updateShowName } from '../lib/showName'
 import { formatDuration, formatElapsedSince, formatBytes } from '../lib/format'
 import { useListenerCount } from '../lib/useListenerCount'
 
@@ -39,6 +40,10 @@ export function AdminRadioControls() {
   const appOpenCount = useListenerCount()
   const failureStreakRef = useRef(0)
   const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null)
+  const [showNameInput, setShowNameInput] = useState('')
+  const [savingShowName, setSavingShowName] = useState(false)
+  const [showNameSaved, setShowNameSaved] = useState(false)
+  const [showNameError, setShowNameError] = useState<string | null>(null)
 
   async function reloadPlaylist() {
     setEntries(await fetchPlaylist())
@@ -50,6 +55,7 @@ export function AdminRadioControls() {
     // dashboard — one fetch per visit to the tab is enough, not worth
     // polling on the same 5s clock as the live stream stats.
     fetchStorageUsage().then(setStorageUsage)
+    fetchShowName().then(setShowNameInput)
 
     async function poll() {
       const result = await fetchIcecastStatus()
@@ -68,6 +74,24 @@ export function AdminRadioControls() {
     const timer = setInterval(poll, STATUS_POLL_MS)
     return () => clearInterval(timer)
   }, [])
+
+  async function handleSaveShowName() {
+    setSavingShowName(true)
+    setShowNameError(null)
+    setShowNameSaved(false)
+    const { error } = await updateShowName(showNameInput)
+    if (error) {
+      setShowNameError(error)
+    } else {
+      // Reflects back whatever updateShowName actually persisted (it
+      // trims and falls back to the default for an empty/whitespace
+      // input) — otherwise the field could show blank/untrimmed text
+      // that no longer matches what listeners are seeing.
+      setShowNameInput(await fetchShowName())
+      setShowNameSaved(true)
+    }
+    setSavingShowName(false)
+  }
 
   async function handleSkip() {
     setSkipping(true)
@@ -149,6 +173,30 @@ export function AdminRadioControls() {
           <span className="admin-dashboard__tile-value">{status?.bitrateKbps ? `${status.bitrateKbps} kbps` : '—'}</span>
           <span className="admin-dashboard__tile-label">Битрейт</span>
         </div>
+      </div>
+
+      <div className="admin-dashboard__show-name">
+        <label htmlFor="admin-show-name-input" className="admin-dashboard__show-name-label">
+          НАЗВАНИЕ ШОУ
+        </label>
+        <div className="admin-dashboard__show-name-row">
+          <input
+            id="admin-show-name-input"
+            type="text"
+            value={showNameInput}
+            onChange={(e) => {
+              setShowNameInput(e.target.value)
+              setShowNameSaved(false)
+            }}
+            placeholder="LOCAL SELECTS"
+            maxLength={60}
+          />
+          <button onClick={handleSaveShowName} disabled={savingShowName}>
+            {savingShowName ? 'СОХРАНЯЮ...' : 'СОХРАНИТЬ'}
+          </button>
+        </div>
+        {showNameSaved && <p className="admin-dashboard__show-name-status">Сохранено — уже видно в эфире.</p>}
+        {showNameError && <p className="admin-radio-controls__error">{showNameError}</p>}
       </div>
 
       <div className="admin-dashboard__now-playing">

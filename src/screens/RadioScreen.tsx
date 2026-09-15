@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { STREAM_HOST, STREAM_URL, decodeHtmlEntities } from '../lib/radioServer'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
 import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
+import { fetchShowName, DEFAULT_SHOW_NAME } from '../lib/showName'
 import { formatClock } from '../lib/format'
 import { OnAirBadge } from '../components/OnAirBadge'
 
@@ -41,6 +42,10 @@ export function RadioScreen() {
   // only thing that actually knows where in the broadcast we are), it's
   // matched against nowPlaying below by title/artist.
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
+  // Admin-editable tagline under the header — defaults to the original
+  // "LOCAL SELECTS" while the fetch is in flight, so there's no visible
+  // flash/empty state before it resolves.
+  const [showName, setShowName] = useState(DEFAULT_SHOW_NAME)
   // Square cover image OR looping video from src/assets/backgrounds/ —
   // re-rolled on a 6-hour timer (not per-track; the whole point is a
   // stable "vibe" that outlasts any one track), per explicit request.
@@ -83,6 +88,7 @@ export function RadioScreen() {
 
   useEffect(() => {
     fetchPlaylist().then(setEntries)
+    fetchShowName().then(setShowName)
 
     // Icecast exposes the currently-playing title itself — poll it instead
     // of trying to derive "now playing" from playlist position, since the
@@ -355,7 +361,7 @@ export function RadioScreen() {
           <OnAirBadge isPlaying={userStarted && !isPaused && !isBuffering} />
         </div>
 
-        <div className="radio-screen__tagline">LOCAL SELECTS</div>
+        <div className="radio-screen__tagline">{showName}</div>
 
         <div
           className="radio-screen__cover"
