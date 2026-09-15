@@ -4,6 +4,7 @@ import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
 import { fetchIcecastStatus, type IcecastStatus } from '../lib/radioServer'
 import { fetchStorageUsage, type StorageUsage } from '../lib/storageUsage'
 import { fetchShowName, updateShowName } from '../lib/showName'
+import { fetchHourlyOpens, type HourlyOpens } from '../lib/loginEvents'
 import { formatDuration, formatElapsedSince, formatBytes } from '../lib/format'
 import { useListenerCount } from '../lib/useListenerCount'
 
@@ -44,6 +45,7 @@ export function AdminRadioControls() {
   const [savingShowName, setSavingShowName] = useState(false)
   const [showNameSaved, setShowNameSaved] = useState(false)
   const [showNameError, setShowNameError] = useState<string | null>(null)
+  const [hourlyOpens, setHourlyOpens] = useState<HourlyOpens[] | null>(null)
 
   async function reloadPlaylist() {
     setEntries(await fetchPlaylist())
@@ -56,6 +58,9 @@ export function AdminRadioControls() {
     // polling on the same 5s clock as the live stream stats.
     fetchStorageUsage().then(setStorageUsage)
     fetchShowName().then(setShowNameInput)
+    // Same one-fetch-per-visit treatment as storage usage — this is a
+    // slow-changing histogram over historical data, not a live stat.
+    fetchHourlyOpens().then(setHourlyOpens)
 
     async function poll() {
       const result = await fetchIcecastStatus()
@@ -112,6 +117,8 @@ export function AdminRadioControls() {
   const totalSeconds = entries.reduce((sum, e) => sum + e.track.durationSeconds, 0)
   const storagePercent = storageUsage ? storageUsage.usedBytes / storageUsage.limitBytes : null
   const storageLow = storagePercent !== null && storagePercent >= STORAGE_WARNING_THRESHOLD
+  const maxHourlyOpens = hourlyOpens ? Math.max(1, ...hourlyOpens.map((h) => h.count)) : 1
+  const totalOpens = hourlyOpens ? hourlyOpens.reduce((sum, h) => sum + h.count, 0) : 0
 
   return (
     <div className="admin-radio-controls">
@@ -173,6 +180,33 @@ export function AdminRadioControls() {
           <span className="admin-dashboard__tile-value">{status?.bitrateKbps ? `${status.bitrateKbps} kbps` : '—'}</span>
           <span className="admin-dashboard__tile-label">Битрейт</span>
         </div>
+      </div>
+
+      <div className="admin-dashboard__chart">
+        <div className="admin-dashboard__chart-header">
+          <span className="admin-dashboard__chart-label">КОГДА ОТКРЫВАЮТ ПРИЛОЖЕНИЕ</span>
+          <span className="admin-dashboard__chart-total">{totalOpens} заходов всего</span>
+        </div>
+        <div className="admin-dashboard__chart-bars">
+          {(hourlyOpens ?? []).map(({ hour, count }) => (
+            <div key={hour} className="admin-dashboard__chart-bar-wrap" title={`${hour}:00 — ${count}`}>
+              <div
+                className="admin-dashboard__chart-bar"
+                style={{ height: `${(count / maxHourlyOpens) * 100}%` }}
+              />
+            </div>
+          ))}
+        </div>
+        <div className="admin-dashboard__chart-ticks">
+          {(hourlyOpens ?? []).map(({ hour }) => (
+            <span key={hour} className="admin-dashboard__chart-tick">
+              {hour % 3 === 0 ? hour : ''}
+            </span>
+          ))}
+        </div>
+        <p className="admin-dashboard__chart-caption">
+          По часам суток (твоё местное время), за всё время работы приложения.
+        </p>
       </div>
 
       <div className="admin-dashboard__show-name">
