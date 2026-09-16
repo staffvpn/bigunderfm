@@ -9,7 +9,7 @@ import { S3Client, PutObjectCommand } from 'npm:@aws-sdk/client-s3@3.658.1'
 // never trigger this again. Credentials are inlined (not env secrets)
 // because this environment has no way to set Edge Function secrets
 // remotely — same reasoning as CRON_SECRET in quota-check/index.ts.
-const R2_ACCOUNT_ID = 'df8e0891ca07f7c0a3b4406039787801'
+const R2_ACCOUNT_ID = 'df8e0891ca07f7c0a3b44060397870a1'
 const R2_ACCESS_KEY_ID = '166fc1d1799c8328174359708f875c5a'
 const R2_SECRET_ACCESS_KEY = '5413590eda6670c3e150ab9b5f7c0e4ecd0d46c19ae6c574176d3c935f27c180'
 const R2_BUCKET = 'bigunderfm-media'
