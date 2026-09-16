@@ -88,6 +88,7 @@ interface TelegramMessage {
   message_id: number
   chat: { id: number }
   from?: { id: number }
+  text?: string
   audio?: TelegramAudio
   document?: { file_name?: string; mime_type?: string }
 }
@@ -120,6 +121,83 @@ const ADMIN_TELEGRAM_IDS = new Set([929887068, 432943377])
 
 function isAdmin(telegramUserId: number): boolean {
   return ADMIN_TELEGRAM_IDS.has(telegramUserId)
+}
+
+const ICECAST_STATUS_URL = 'https://159-194-234-135.sslip.io/status-json.xsl'
+const SUPABASE_STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024
+const SUPABASE_DB_LIMIT_BYTES = 500 * 1024 * 1024
+const SUPABASE_BILLING_URL = `https://supabase.com/dashboard/project/${SUPABASE_URL.match(/https:\/\/(.+)\.supabase\.co/)?.[1] ?? ''}/settings/billing/usage`
+
+function formatBytes(bytes: number): string {
+  const mb = bytes / (1024 * 1024)
+  if (mb >= 1024) return `${(mb / 1024).toFixed(2)} ГБ`
+  return `${mb.toFixed(0)} МБ`
+}
+
+async function supabaseStorageBytes(): Promise<number> {
+  let total = 0
+  for (const bucket of ['tracks', 'covers']) {
+    let offset = 0
+    for (;;) {
+      const { data, error } = await adminClient.storage.from(bucket).list('', { limit: 1000, offset })
+      if (error || !data) break
+      for (const obj of data) total += obj.metadata?.size ?? 0
+      if (data.length < 1000) break
+      offset += 1000
+    }
+  }
+  return total
+}
+
+/**
+ * On-demand /status snapshot — everything a "screenshot of Управление"
+ * would show, as text instead (no headless-browser rendering available
+ * here). Checks Icecast directly (works regardless of Supabase's own
+ * health) and Supabase separately, so a Supabase outage shows up as its
+ * own clearly-labeled line rather than silently breaking the whole reply.
+ */
+async function handleStatusCommand(chatId: number): Promise<void> {
+  const lines: string[] = ['📊 СТАТУС BIGUNDER FM']
+
+  try {
+    const res = await fetch(ICECAST_STATUS_URL, { signal: AbortSignal.timeout(8000) })
+    const data = await res.json()
+    const source = data?.icestats?.source
+    if (source) {
+      lines.push('', '📻 Эфир: ✅ играет', `Сейчас: ${source.title ?? '—'}`, `Слушают: ${source.listeners ?? '—'}`)
+    } else {
+      lines.push('', '📻 Эфир: 🚨 источник не подключён')
+    }
+  } catch {
+    lines.push('', '📻 Эфир: 🚨 сервер не отвечает')
+  }
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/tracks?select=id&limit=1`, {
+      headers: { apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '', Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+    const [storageBytes, dbResult] = await Promise.all([supabaseStorageBytes(), adminClient.rpc('get_db_size_bytes')])
+    const dbBytes = typeof dbResult.data === 'number' ? dbResult.data : null
+
+    lines.push(
+      '',
+      '🗄️ Supabase: ✅ доступна',
+      `Хранилище: ${formatBytes(storageBytes)} / ${formatBytes(SUPABASE_STORAGE_LIMIT_BYTES)} (${Math.round((storageBytes / SUPABASE_STORAGE_LIMIT_BYTES) * 100)}%)`,
+    )
+    if (dbBytes !== null) {
+      lines.push(
+        `База данных: ${formatBytes(dbBytes)} / ${formatBytes(SUPABASE_DB_LIMIT_BYTES)} (${Math.round((dbBytes / SUPABASE_DB_LIMIT_BYTES) * 100)}%)`,
+      )
+    }
+    lines.push('', `Точный трафик (не показываю здесь): ${SUPABASE_BILLING_URL}`)
+  } catch {
+    lines.push('', '🗄️ Supabase: 🚨 недоступна (лимит трафика или другая ошибка)')
+  }
+
+  await sendMessage(chatId, lines.join('\n'))
 }
 
 async function nextPlaylistPosition(): Promise<number> {
@@ -270,7 +348,9 @@ Deno.serve(async (req) => {
       return new Response('ok', { status: 200 })
     }
 
-    if (message.audio) {
+    if (message.text?.trim().toLowerCase() === '/status') {
+      await handleStatusCommand(message.chat.id)
+    } else if (message.audio) {
       await processAudioMessage(message, message.audio)
     } else if (message.document?.mime_type?.startsWith('audio/')) {
       // Telegram itself decides audio vs. generic document per file —
