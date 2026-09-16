@@ -174,7 +174,7 @@ async function handleStatusCommand(chatId: number): Promise<void> {
 
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/tracks?select=id&limit=1`, {
-      headers: { apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '', Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
+      headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
       signal: AbortSignal.timeout(8000),
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
