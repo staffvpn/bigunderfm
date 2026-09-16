@@ -1,4 +1,28 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { S3Client, PutObjectCommand } from 'npm:@aws-sdk/client-s3@3.658.1'
+
+// Tracks moved off Supabase Storage to Cloudflare R2 (2026-09-16) —
+// Supabase's free-tier egress quota got exhausted by the live stream
+// re-fetching the same rotation on repeat, which silently 402'd the
+// entire project (Storage AND the database REST API) until upgraded or
+// reset. R2 has zero egress fees, so the exact same usage pattern can
+// never trigger this again. Credentials are inlined (not env secrets)
+// because this environment has no way to set Edge Function secrets
+// remotely — same reasoning as CRON_SECRET in quota-check/index.ts.
+const R2_ACCOUNT_ID = 'df8e0891ca07f7c0a3b4406039787801'
+const R2_ACCESS_KEY_ID = '166fc1d1799c8328174359708f875c5a'
+const R2_SECRET_ACCESS_KEY = '5413590eda6670c3e150ab9b5f7c0e4ecd0d46c19ae6c574176d3c935f27c180'
+const R2_BUCKET = 'bigunderfm-media'
+
+const r2 = new S3Client({
+  region: 'auto',
+  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY },
+})
+
+async function uploadToR2(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
+  await r2.send(new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, Body: bytes, ContentType: contentType }))
+}
 
 // Storage path/content-type helpers — same rules as
 // src/lib/storagePath.ts (Storage rejects keys with spaces or
@@ -86,13 +110,16 @@ async function deleteMessage(chatId: number, messageId: number): Promise<void> {
   await callTelegram('deleteMessage', { chat_id: chatId, message_id: messageId })
 }
 
-async function isAdmin(telegramUserId: number): Promise<boolean> {
-  const { data } = await adminClient
-    .from('admins')
-    .select('telegram_user_id')
-    .eq('telegram_user_id', telegramUserId)
-    .maybeSingle()
-  return Boolean(data)
+// Hardcoded rather than a DB lookup against the `admins` table — this
+// check needs to keep working even when Supabase's own REST API is down
+// or egress-restricted (exactly the failure mode this whole migration is
+// about), so it can't depend on Supabase being reachable at all. Low risk
+// either way: this only gates who can upload tracks via the bot, not any
+// real security boundary — RLS still protects the database itself.
+const ADMIN_TELEGRAM_IDS = new Set([929887068, 432943377])
+
+function isAdmin(telegramUserId: number): boolean {
+  return ADMIN_TELEGRAM_IDS.has(telegramUserId)
 }
 
 async function nextPlaylistPosition(): Promise<number> {
@@ -142,11 +169,7 @@ async function processAudioMessage(message: TelegramMessage, audio: TelegramAudi
   // someone chasing the wrong problem.
   const TELEGRAM_BOT_API_DOWNLOAD_LIMIT = 20 * 1024 * 1024
   if (audio.file_size && audio.file_size > TELEGRAM_BOT_API_DOWNLOAD_LIMIT) {
-    await sendMessage(
-      chatId,
-      '🚨 Файл больше 20 МБ — это лимит самого Telegram на скачивание файлов ботом, в коде это не обойти. ' +
-        'Загрузи через вкладку "Библиотека" в приложении — там ограничение 50 МБ.',
-    )
+    await sendMessage(chatId, '🚨 Файл больше 20 МБ — это лимит самого Telegram на скачивание файлов ботом, в коде это не обойти.')
     return
   }
 
@@ -159,7 +182,7 @@ async function processAudioMessage(message: TelegramMessage, audio: TelegramAudi
     await sendMessage(
       chatId,
       tooBig
-        ? '🚨 Файл больше 20 МБ — это лимит самого Telegram на скачивание ботом, обойти нельзя. Загрузи через вкладку "Библиотека" в приложении, там ограничение 50 МБ.'
+        ? '🚨 Файл больше 20 МБ — это лимит самого Telegram на скачивание ботом, обойти нельзя.'
         : 'Не получилось скачать файл из Telegram.',
     )
     return
@@ -173,17 +196,23 @@ async function processAudioMessage(message: TelegramMessage, audio: TelegramAudi
   const bytes = new Uint8Array(await fileRes.arrayBuffer())
 
   const storagePath = buildTrackFilePath(audio.file_name)
-  const { error: uploadError } = await adminClient.storage
-    .from('tracks')
-    .upload(storagePath, bytes, { contentType })
-  if (uploadError) {
-    await sendMessage(chatId, `Ошибка загрузки: ${uploadError.message}`)
+  try {
+    await uploadToR2(storagePath, bytes, contentType)
+  } catch (err) {
+    await sendMessage(chatId, `Ошибка загрузки в R2: ${(err as Error).message}`)
     return
   }
 
   const title = audio.title?.trim() || (audio.file_name ? stripExtension(audio.file_name) : 'Untitled')
   const artist = audio.performer?.trim() || 'Unknown Artist'
 
+  // The file is safely in R2 at this point regardless of what happens
+  // next — R2 is a separate service from Supabase, unaffected by
+  // Supabase's own outages. The catalog entry below still goes through
+  // Supabase's database, though, which — while it's in its current
+  // egress-restricted state — may fail here even though the upload
+  // itself succeeded. Told apart explicitly so a failure here doesn't
+  // read as "lost the file", which it isn't.
   const { data: trackRow, error: insertError } = await adminClient
     .from('tracks')
     .insert({
@@ -196,7 +225,12 @@ async function processAudioMessage(message: TelegramMessage, audio: TelegramAudi
     .select('id')
     .single()
   if (insertError || !trackRow) {
-    await sendMessage(chatId, `Ошибка сохранения: ${insertError?.message ?? 'unknown'}`)
+    await sendMessage(
+      chatId,
+      `Файл загружен (${artist} — ${title}), но сейчас не получилось добавить его в каталог ` +
+        `(${insertError?.message ?? 'unknown'}) — скорее всего, Supabase всё ещё восстанавливается. ` +
+        'Файл никуда не денется, его добавят в плейлист отдельно.',
+    )
     return
   }
 
@@ -230,7 +264,7 @@ Deno.serve(async (req) => {
       return new Response('ok', { status: 200 })
     }
 
-    if (!(await isAdmin(message.from.id))) {
+    if (!isAdmin(message.from.id)) {
       // Silently ignore non-admins: no reply, no trace this bot does
       // anything beyond whatever else it's used for.
       return new Response('ok', { status: 200 })
@@ -246,7 +280,7 @@ Deno.serve(async (req) => {
       await sendMessage(
         message.chat.id,
         '🚨 wav-подобное: Telegram прислал этот файл без длительности — бот не может его принять. ' +
-          'Перекодируй в mp3 и перешли ещё раз, либо загрузи через вкладку "Библиотека" в самом приложении.',
+          'Перекодируй в mp3 и перешли ещё раз.',
       )
     }
 
