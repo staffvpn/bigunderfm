@@ -1,0 +1,17 @@
+{
+  "name": "bigunderfm-worker",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250910.0",
+    "typescript": "^5.5.3",
+    "vitest": "^2.0.5",
+    "wrangler": "^4.0.0"
+  }
+}

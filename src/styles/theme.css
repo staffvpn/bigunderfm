@@ -805,6 +805,24 @@ button {
   border-color: var(--color-accent);
 }
 
+.admin-dashboard__notify-input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-muted);
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-dashboard__notify-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
 .admin-dashboard__show-name-status {
   color: var(--color-muted);
   font-size: 12px;

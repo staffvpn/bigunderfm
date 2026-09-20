@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { initTelegramApp } from './lib/telegram'
 import { authenticate } from './lib/auth'
+import { joinAppPresence } from './lib/presence'
 import { RadioScreen } from './screens/RadioScreen'
 import { AdminLibrary } from './screens/AdminLibrary'
 import { AdminRadioControls } from './screens/AdminRadioControls'
@@ -16,6 +17,8 @@ export default function App() {
 
   useEffect(() => {
     initTelegramApp()
+    // Counts this client in the admin's "Открыли приложение" number.
+    joinAppPresence()
     authenticate().then((result) => {
       setIsAdmin(result.isAdmin)
       setReady(true)

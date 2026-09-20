@@ -1,19 +1,22 @@
-import { supabase } from './supabase'
+import { api } from './api'
 
 export const DEFAULT_SHOW_NAME = 'LOCAL SELECTS'
 
-/** The small tagline under the header on the radio screen — an
-    admin-editable label (e.g. for calling out a themed mix), stored on the
-    same radio_state singleton row the old virtual-timeline design used. */
+/** The small tagline under the header on the radio screen; admin-editable. */
 export async function fetchShowName(): Promise<string> {
-  const { data } = await supabase.from('radio_state').select('show_name').eq('id', true).maybeSingle()
-  return data?.show_name?.trim() || DEFAULT_SHOW_NAME
+  try {
+    const data = await api<{ name: string }>('/api/show-name')
+    return data.name?.trim() || DEFAULT_SHOW_NAME
+  } catch {
+    return DEFAULT_SHOW_NAME
+  }
 }
 
 export async function updateShowName(name: string): Promise<{ error: string | null }> {
-  const { error } = await supabase
-    .from('radio_state')
-    .update({ show_name: name.trim() || DEFAULT_SHOW_NAME })
-    .eq('id', true)
-  return { error: error?.message ?? null }
+  try {
+    await api('/api/admin/show-name', { method: 'PUT', body: { name } })
+    return { error: null }
+  } catch (err) {
+    return { error: (err as Error).message }
+  }
 }

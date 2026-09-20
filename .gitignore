@@ -5,3 +5,6 @@ dist
 *.tsbuildinfo
 /vite.config.js
 /vite.config.d.ts
+.wrangler
+supabase/.temp
+.dev.vars

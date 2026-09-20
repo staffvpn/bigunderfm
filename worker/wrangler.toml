@@ -1,0 +1,33 @@
+name = "bigunderfm-api"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+account_id = "df8e0891ca07f7c0a3b44060397870a1"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bigunderfm"
+database_id = "8a5bf4cd-0922-4c58-847f-53be5cd56847"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "bigunderfm-media"
+
+[[durable_objects.bindings]]
+name = "PRESENCE"
+class_name = "Presence"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Presence"]
+
+# Samples the Icecast listener count once a minute (see scheduled() in src/index.ts).
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+# Public r.dev URL of the bigunderfm-media bucket — the VPS and the app read tracks from here.
+R2_PUBLIC_BASE = "https://pub-4940e64168824086a7fd4cf46cf01d65.r2.dev"
+ICECAST_STATUS_URL = "https://159-194-234-135.sslip.io/status-json.xsl"
+SKIP_BRIDGE_URL = "https://159-194-234-135.sslip.io/skip-bridge"
+# Secrets (set with `wrangler secret put`): TELEGRAM_BOT_TOKEN, JWT_SECRET,
+# SKIP_BRIDGE_SECRET, INTERNAL_SECRET, WEBHOOK_SECRET

@@ -1,68 +1,54 @@
 import { useEffect, useRef, useState } from 'react'
-import { supabase } from '../lib/supabase'
-import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
+import { api } from '../lib/api'
 import { fetchIcecastStatus, type IcecastStatus } from '../lib/radioServer'
-import { fetchStorageUsage, type StorageUsage } from '../lib/storageUsage'
+import { fetchAdminStats, STORAGE_LIMIT_BYTES, type AdminStats } from '../lib/adminStats'
 import { fetchShowName, updateShowName } from '../lib/showName'
-import { fetchHourlyOpens, type HourlyOpens } from '../lib/loginEvents'
 import { formatDuration, formatElapsedSince, formatBytes } from '../lib/format'
-import { useListenerCount } from '../lib/useListenerCount'
 
-// Above this fraction of the free plan's 1 GB Storage cap, flag it —
-// uploads will start hard-failing once the limit is actually hit, so this
-// needs to be visible well before that, not discovered as an upload error.
+// Above this fraction of the free R2 allowance, flag it.
 const STORAGE_WARNING_THRESHOLD = 0.85
 
 const STATUS_POLL_MS = 5000
+const ONLINE_POLL_MS = 10000
 // A single failed poll is routine (a request can just drop) — only flag
 // the server as actually down after several polls in a row fail, so a
 // one-off network blip doesn't flash a false alarm at the admin.
 const FAILURES_BEFORE_WARNING = 3
 
 // The broadcast is a real, always-on stream (Icecast + Liquidsoap on the
-// VPS) — there's no "pause" concept anymore, same as a real radio station
-// never pauses. The only server-side action left is Skip, which goes
-// through the radio-skip Edge Function (admin-gated there via
-// is_current_user_admin(), same check the old RPCs used) rather than a
-// direct RPC, since the actual skip has to reach Liquidsoap's telnet
-// control interface on the VPS, not the database.
+// VPS) — there's no "pause" concept, same as a real radio station never
+// pauses. The only server-side action is Skip, which the backend forwards to
+// Liquidsoap's control interface on the VPS.
 export function AdminRadioControls() {
-  const [entries, setEntries] = useState<PlaylistEntry[]>([])
   const [status, setStatus] = useState<IcecastStatus | null>(null)
   const [serverDown, setServerDown] = useState(false)
   const [skipping, setSkipping] = useState(false)
   const [skipError, setSkipError] = useState<string | null>(null)
-  // "Открыли приложение" — presence-based, counts anyone with the app open
-  // right now regardless of tab or whether they've pressed play. Distinct
-  // from status.listeners (below), which is Icecast's own count of clients
-  // actually receiving audio — the two numbers answering different
-  // questions is exactly what today's whole "does it play or not" back-
-  // and-forth needed visibility into.
-  const appOpenCount = useListenerCount()
+  // "Открыли приложение" — how many clients have the app open right now
+  // (backend presence counter), regardless of tab or whether they pressed
+  // play. Distinct from status.listeners, which is Icecast's own count of
+  // clients actually receiving audio.
+  const [appOpenCount, setAppOpenCount] = useState<number | null>(null)
   const failureStreakRef = useRef(0)
-  const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null)
+  const [stats, setStats] = useState<AdminStats | null>(null)
   const [showNameInput, setShowNameInput] = useState('')
   const [savingShowName, setSavingShowName] = useState(false)
   const [showNameSaved, setShowNameSaved] = useState(false)
   const [showNameError, setShowNameError] = useState<string | null>(null)
-  const [hourlyOpens, setHourlyOpens] = useState<HourlyOpens[] | null>(null)
-
-  async function reloadPlaylist() {
-    setEntries(await fetchPlaylist())
-  }
+  const [notifyText, setNotifyText] = useState('')
+  const [notifying, setNotifying] = useState(false)
+  const [notifyResult, setNotifyResult] = useState<string | null>(null)
+  const [notifyError, setNotifyError] = useState<string | null>(null)
 
   useEffect(() => {
-    reloadPlaylist()
-    // Storage usage doesn't change second-to-second like the rest of this
-    // dashboard — one fetch per visit to the tab is enough, not worth
-    // polling on the same 5s clock as the live stream stats.
-    fetchStorageUsage().then(setStorageUsage)
+    // Slow-changing numbers (peaks, storage, histogram): one fetch per visit.
+    fetchAdminStats().then((s) => {
+      setStats(s)
+      if (s) setAppOpenCount(s.online)
+    })
     fetchShowName().then(setShowNameInput)
-    // Same one-fetch-per-visit treatment as storage usage — this is a
-    // slow-changing histogram over historical data, not a live stat.
-    fetchHourlyOpens().then(setHourlyOpens)
 
-    async function poll() {
+    async function pollStream() {
       const result = await fetchIcecastStatus()
       if (result) {
         failureStreakRef.current = 0
@@ -75,9 +61,22 @@ export function AdminRadioControls() {
         }
       }
     }
-    poll()
-    const timer = setInterval(poll, STATUS_POLL_MS)
-    return () => clearInterval(timer)
+    async function pollOnline() {
+      try {
+        const data = await api<{ online: number }>('/api/admin/online')
+        setAppOpenCount(data.online)
+      } catch {
+        // keep the last known value
+      }
+    }
+    pollStream()
+    pollOnline()
+    const streamTimer = setInterval(pollStream, STATUS_POLL_MS)
+    const onlineTimer = setInterval(pollOnline, ONLINE_POLL_MS)
+    return () => {
+      clearInterval(streamTimer)
+      clearInterval(onlineTimer)
+    }
   }, [])
 
   async function handleSaveShowName() {
@@ -88,37 +87,65 @@ export function AdminRadioControls() {
     if (error) {
       setShowNameError(error)
     } else {
-      // Reflects back whatever updateShowName actually persisted (it
-      // trims and falls back to the default for an empty/whitespace
-      // input) — otherwise the field could show blank/untrimmed text
-      // that no longer matches what listeners are seeing.
+      // Reflects back whatever was actually persisted (it trims and falls
+      // back to the default for an empty input).
       setShowNameInput(await fetchShowName())
       setShowNameSaved(true)
     }
     setSavingShowName(false)
   }
 
+  async function handleNotify() {
+    const text = notifyText.trim()
+    if (!text) return
+    if (!window.confirm('Отправить это сообщение всем, кто открывал приложение? Отменить отправку нельзя.')) return
+    setNotifying(true)
+    setNotifyError(null)
+    setNotifyResult(null)
+    // The backend sends in chunks; keep asking until it says there is no next one.
+    let offset = 0
+    let sent = 0
+    let failed = 0
+    let total = 0
+    try {
+      for (;;) {
+        const r = await api<{ sent: number; failed: number; total: number; next: number | null }>('/api/admin/notify', {
+          method: 'POST',
+          body: { text, offset, totals: { sent, failed } },
+        })
+        sent += r.sent
+        failed += r.failed
+        total = r.total
+        if (r.next === null) break
+        setNotifyResult(`Отправляю… ${sent + failed} из ${total}`)
+        offset = r.next
+      }
+      setNotifyResult(`Отправлено: ${sent} из ${total}${failed ? ` (не доставлено: ${failed})` : ''}`)
+      setNotifyText('')
+    } catch (err) {
+      setNotifyError(`${(err as Error).message} (успело уйти: ${sent})`)
+    } finally {
+      setNotifying(false)
+    }
+  }
+
   async function handleSkip() {
     setSkipping(true)
     setSkipError(null)
     try {
-      const { data, error } = await supabase.functions.invoke('radio-skip', { method: 'POST' })
-      if (error || data?.error) {
-        setSkipError(data?.error ?? error?.message ?? 'Не удалось переключить трек')
-      }
+      await api('/api/admin/skip', { method: 'POST' })
     } catch (err) {
-      setSkipError((err as Error).message)
+      setSkipError((err as Error).message || 'Не удалось переключить трек')
     } finally {
       setSkipping(false)
     }
   }
 
-  const trackCount = entries.length
-  const totalSeconds = entries.reduce((sum, e) => sum + e.track.durationSeconds, 0)
-  const storagePercent = storageUsage ? storageUsage.usedBytes / storageUsage.limitBytes : null
+  const storagePercent = stats ? stats.storageUsedBytes / STORAGE_LIMIT_BYTES : null
   const storageLow = storagePercent !== null && storagePercent >= STORAGE_WARNING_THRESHOLD
+  const hourlyOpens = stats?.hourlyOpens ?? null
   const maxHourlyOpens = hourlyOpens ? Math.max(1, ...hourlyOpens.map((h) => h.count)) : 1
-  const totalOpens = hourlyOpens ? hourlyOpens.reduce((sum, h) => sum + h.count, 0) : 0
+  const totalOpens = stats?.totalOpens ?? 0
 
   return (
     <div className="admin-radio-controls">
@@ -129,8 +156,8 @@ export function AdminRadioControls() {
       )}
       {storageLow && (
         <p className="admin-dashboard__warning">
-          ⚠ Хранилище почти заполнено ({Math.round(storagePercent! * 100)}%) — скоро понадобится платный тариф
-          Supabase, иначе загрузка новых треков перестанет работать.
+          ⚠ Хранилище почти заполнено ({Math.round(storagePercent! * 100)}%) — бесплатный лимит Cloudflare R2 скоро
+          закончится, загрузка новых треков может перестать работать.
         </p>
       )}
 
@@ -138,7 +165,7 @@ export function AdminRadioControls() {
         <div className="admin-dashboard__storage-row">
           <span className="admin-dashboard__storage-label">Хранилище (бесплатный лимит)</span>
           <span className="admin-dashboard__storage-value">
-            {storageUsage ? `${formatBytes(storageUsage.usedBytes)} / ${formatBytes(storageUsage.limitBytes)}` : '—'}
+            {stats ? `${formatBytes(stats.storageUsedBytes)} / ${formatBytes(STORAGE_LIMIT_BYTES)}` : '—'}
           </span>
         </div>
         <div className="admin-dashboard__storage-bar">
@@ -155,12 +182,20 @@ export function AdminRadioControls() {
           <span className="admin-dashboard__tile-label">Слушают поток</span>
         </div>
         <div className="admin-dashboard__tile">
-          <span className="admin-dashboard__tile-value">{appOpenCount}</span>
+          <span className="admin-dashboard__tile-value">{appOpenCount ?? '—'}</span>
           <span className="admin-dashboard__tile-label">Открыли приложение</span>
         </div>
         <div className="admin-dashboard__tile">
-          <span className="admin-dashboard__tile-value">{status?.peakListeners ?? '—'}</span>
-          <span className="admin-dashboard__tile-label">Пик слушателей</span>
+          <span className="admin-dashboard__tile-value">{stats?.peaks.day ?? '—'}</span>
+          <span className="admin-dashboard__tile-label">Пик за день</span>
+        </div>
+        <div className="admin-dashboard__tile">
+          <span className="admin-dashboard__tile-value">{stats?.peaks.week ?? '—'}</span>
+          <span className="admin-dashboard__tile-label">Пик за неделю</span>
+        </div>
+        <div className="admin-dashboard__tile">
+          <span className="admin-dashboard__tile-value">{stats?.peaks.month ?? '—'}</span>
+          <span className="admin-dashboard__tile-label">Пик за месяц</span>
         </div>
         <div className="admin-dashboard__tile">
           <span className="admin-dashboard__tile-value">
@@ -169,11 +204,11 @@ export function AdminRadioControls() {
           <span className="admin-dashboard__tile-label">Эфир идёт</span>
         </div>
         <div className="admin-dashboard__tile">
-          <span className="admin-dashboard__tile-value">{trackCount}</span>
+          <span className="admin-dashboard__tile-value">{stats?.trackCount ?? '—'}</span>
           <span className="admin-dashboard__tile-label">Треков в ротации</span>
         </div>
         <div className="admin-dashboard__tile">
-          <span className="admin-dashboard__tile-value">{formatDuration(totalSeconds)}</span>
+          <span className="admin-dashboard__tile-value">{stats ? formatDuration(stats.rotationSeconds) : '—'}</span>
           <span className="admin-dashboard__tile-label">Длительность ротации</span>
         </div>
         <div className="admin-dashboard__tile">
@@ -231,6 +266,29 @@ export function AdminRadioControls() {
         </div>
         {showNameSaved && <p className="admin-dashboard__show-name-status">Сохранено — уже видно в эфире.</p>}
         {showNameError && <p className="admin-radio-controls__error">{showNameError}</p>}
+      </div>
+
+      <div className="admin-dashboard__show-name">
+        <label htmlFor="admin-notify-input" className="admin-dashboard__show-name-label">
+          УВЕДОМЛЕНИЕ В БОТЕ
+        </label>
+        <textarea
+          id="admin-notify-input"
+          className="admin-dashboard__notify-input"
+          value={notifyText}
+          onChange={(e) => {
+            setNotifyText(e.target.value)
+            setNotifyResult(null)
+          }}
+          placeholder="Текст сообщения для слушателей"
+          maxLength={1000}
+          rows={4}
+        />
+        <button onClick={handleNotify} disabled={notifying || !notifyText.trim()}>
+          {notifying ? 'ОТПРАВЛЯЮ...' : 'ОТПРАВИТЬ ВСЕМ'}
+        </button>
+        {notifyResult && <p className="admin-dashboard__show-name-status">{notifyResult}</p>}
+        {notifyError && <p className="admin-radio-controls__error">{notifyError}</p>}
       </div>
 
       <div className="admin-dashboard__now-playing">

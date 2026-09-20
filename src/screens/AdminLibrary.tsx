@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
-import { audioContentType, buildTrackFilePath } from '../lib/storagePath'
 import { formatDuration } from '../lib/format'
 import { getTelegramUserId } from '../lib/telegram'
 
@@ -57,83 +56,30 @@ export function AdminLibrary() {
     // initial download — only an admin who actually uploads ever fetches it.
     const { extractTrackMetadata } = await import('../lib/metadata')
 
-    const { data: existing } = await supabase
-      .from('playlist_items')
-      .select('position')
-      .order('position', { ascending: false })
-      .limit(1)
-    let nextPosition = (existing?.[0]?.position ?? 0) + 1
-
     for (const file of Array.from(files)) {
-      // Tracked so the catch block can roll back whatever this attempt
-      // already created — otherwise a failure partway through (a dropped
-      // connection mid-upload on a big file over mobile data, a DB error)
-      // leaves an orphaned Storage object that's uploaded but never shows
-      // up anywhere, silently eating into the project's storage quota
-      // forever with no way to notice from inside the app.
-      let uploadedFilePath: string | null = null
-      let uploadedCoverPath: string | null = null
-      let insertedTrackId: string | null = null
-
       try {
         const meta = await extractTrackMetadata(file)
 
-        // A zero-duration track occupies no slice of the virtual timeline, so
-        // computeCurrentPosition can never land on it and it would silently
-        // become unplayable dead weight in the loop. Reject it up front.
+        // A zero-duration track occupies no time in the rotation and would
+        // silently become unplayable dead weight. Reject it up front.
         if (meta.durationSeconds <= 0) {
           log.push(`ОШИБКА: ${file.name} (не удалось определить длительность)`)
           continue
         }
 
-        const filePath = buildTrackFilePath(file.name)
-
-        const { error: uploadError } = await supabase.storage
-          .from('tracks')
-          .upload(filePath, file, { contentType: audioContentType(file.name, file.type) })
-        if (uploadError) throw uploadError
-        uploadedFilePath = filePath
-
-        let coverPath: string | null = null
-        if (meta.coverBlob) {
-          coverPath = `${crypto.randomUUID()}.jpg`
-          const { error: coverError } = await supabase.storage.from('covers').upload(coverPath, meta.coverBlob)
-          if (coverError) throw coverError
-          uploadedCoverPath = coverPath
-        }
-
-        const { data: trackRow, error: insertError } = await supabase
-          .from('tracks')
-          .insert({
-            title: meta.title,
-            artist: meta.artist,
-            file_path: filePath,
-            cover_path: coverPath,
-            duration_seconds: meta.durationSeconds,
-            file_size_bytes: file.size,
-          })
-          .select('id')
-          .single()
-        if (insertError) throw insertError
-        insertedTrackId = trackRow.id
-
-        const { error: playlistError } = await supabase.from('playlist_items').insert({
-          track_id: trackRow.id,
-          position: nextPosition++,
-        })
-        if (playlistError) throw playlistError
+        // One request: the backend stores the file (and cover) in R2, adds the
+        // track to the end of the playlist, and rolls everything back itself
+        // if any step fails, so nothing is left orphaned.
+        const form = new FormData()
+        form.append('file', file)
+        form.append('title', meta.title)
+        form.append('artist', meta.artist)
+        form.append('duration', String(meta.durationSeconds))
+        if (meta.coverBlob) form.append('cover', meta.coverBlob, 'cover.jpg')
+        await api('/api/admin/tracks', { method: 'POST', body: form })
 
         log.push(`ГОТОВО: ${meta.artist} — ${meta.title}`)
       } catch (err) {
-        if (insertedTrackId) {
-          await supabase.from('tracks').delete().eq('id', insertedTrackId)
-        }
-        if (uploadedFilePath) {
-          await supabase.storage.from('tracks').remove([uploadedFilePath])
-        }
-        if (uploadedCoverPath) {
-          await supabase.storage.from('covers').remove([uploadedCoverPath])
-        }
         log.push(`ОШИБКА: ${file.name} (${(err as Error).message}) — попробуй загрузить ещё раз`)
       }
     }
@@ -144,43 +90,30 @@ export function AdminLibrary() {
   }
 
   async function handleDelete(trackId: string) {
-    // Deleting the row alone leaves the actual audio (and cover, if any)
-    // sitting in Storage forever — it's never referenced again, but never
-    // freed either, silently eating into the project's storage quota.
-    const entry = entries.find((e) => e.track.id === trackId)
-    await supabase.from('tracks').delete().eq('id', trackId)
-    if (entry) {
-      await supabase.storage.from('tracks').remove([entry.track.filePath])
-      if (entry.track.coverPath) {
-        await supabase.storage.from('covers').remove([entry.track.coverPath])
-      }
+    // The backend removes the track, its playlist entry and its files.
+    try {
+      await api(`/api/admin/tracks/${trackId}`, { method: 'DELETE' })
+    } catch (err) {
+      setResults([`ОШИБКА УДАЛЕНИЯ: ${(err as Error).message}`])
     }
     reload()
   }
 
   async function handleToggle(trackId: string, isEnabled: boolean) {
-    await supabase.from('tracks').update({ is_enabled: !isEnabled }).eq('id', trackId)
+    try {
+      await api(`/api/admin/tracks/${trackId}`, { method: 'PATCH', body: { isEnabled: !isEnabled } })
+    } catch (err) {
+      setResults([`ОШИБКА: ${(err as Error).message}`])
+    }
     reload()
   }
 
-  // Renumbers the ENTIRE list to 1..N in the given order — position has no
-  // UNIQUE constraint specifically so this is safe (see 0001_init.sql):
-  // any transient duplicate mid-loop self-heals once the loop finishes,
-  // and ordering only ever reads via ORDER BY position.
+  // Sends the whole new order at once; the backend renumbers 1..N atomically.
   async function commitOrder(orderedIds: string[]) {
-    const failures: string[] = []
-    for (let i = 0; i < orderedIds.length; i++) {
-      const { error } = await supabase
-        .from('playlist_items')
-        .update({ position: i + 1 })
-        .eq('track_id', orderedIds[i])
-      if (error) {
-        const entry = entries.find((e) => e.track.id === orderedIds[i])
-        failures.push(`ОШИБКА СОРТИРОВКИ: ${entry?.track.title ?? orderedIds[i]} (${error.message})`)
-      }
-    }
-    if (failures.length > 0) {
-      setResults(failures)
+    try {
+      await api('/api/admin/order', { method: 'PUT', body: { ids: orderedIds } })
+    } catch (err) {
+      setResults([`ОШИБКА СОРТИРОВКИ: ${(err as Error).message}`])
     }
     reload()
   }
