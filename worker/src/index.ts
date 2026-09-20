@@ -208,7 +208,9 @@ async function handleStats(req: Request, env: Env): Promise<Response> {
     ).bind(modifier),
     env.DB.prepare('select count(*) as c from login_events'),
     env.DB.prepare('select coalesce(sum(file_size_bytes), 0) as b from tracks'),
-    env.DB.prepare('select count(*) as n, coalesce(sum(duration_seconds), 0) as d from tracks where is_enabled = 1'),
+    env.DB.prepare(
+      'select count(*) as n, coalesce(sum(t.duration_seconds), 0) as d from playlist_items p join tracks t on t.id = p.track_id where t.is_enabled = 1',
+    ),
   ])
   const first = (r: D1Result, key: string): number => Number((r.results[0] as Record<string, unknown> | undefined)?.[key] ?? 0)
 
