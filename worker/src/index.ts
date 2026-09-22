@@ -147,10 +147,43 @@ async function handleUpload(req: Request, env: Env): Promise<Response> {
   }
 }
 
-async function handleToggle(req: Request, env: Env, id: string): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { isEnabled?: boolean } | null
-  if (typeof body?.isEnabled !== 'boolean') return json({ error: 'isEnabled is required' }, 400)
-  await env.DB.prepare('update tracks set is_enabled = ? where id = ?').bind(body.isEnabled ? 1 : 0, id).run()
+/**
+ * Partial update: any of isEnabled / title / artist, whichever the caller
+ * sends. Used both for the enable/disable toggle and for editing a track's
+ * metadata after upload (bot uploads in particular often can't set a real
+ * artist at upload time).
+ */
+async function handleUpdateTrack(req: Request, env: Env, id: string): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as { isEnabled?: boolean; title?: string; artist?: string } | null
+  if (!body || (body.isEnabled === undefined && body.title === undefined && body.artist === undefined)) {
+    return json({ error: 'nothing to update' }, 400)
+  }
+
+  const sets: string[] = []
+  const values: unknown[] = []
+
+  if (body.isEnabled !== undefined) {
+    if (typeof body.isEnabled !== 'boolean') return json({ error: 'isEnabled must be a boolean' }, 400)
+    sets.push('is_enabled = ?')
+    values.push(body.isEnabled ? 1 : 0)
+  }
+  if (body.title !== undefined) {
+    const title = String(body.title).trim()
+    if (!title) return json({ error: 'название не может быть пустым' }, 400)
+    sets.push('title = ?')
+    values.push(title)
+  }
+  if (body.artist !== undefined) {
+    // Same fallback as a fresh upload — an empty field means "unknown", not a blank name.
+    sets.push('artist = ?')
+    values.push(String(body.artist).trim() || 'Unknown Artist')
+  }
+
+  values.push(id)
+  const { meta } = await env.DB.prepare(`update tracks set ${sets.join(', ')} where id = ?`)
+    .bind(...values)
+    .run()
+  if (meta.changes === 0) return json({ error: 'not found' }, 404)
   return json({ ok: true })
 }
 
@@ -358,7 +391,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (m === 'POST' && path === '/api/admin/notify') return handleNotify(req, env)
 
     const track = path.match(/^\/api\/admin\/tracks\/([0-9a-f-]{36})$/)
-    if (track && m === 'PATCH') return handleToggle(req, env, track[1])
+    if (track && m === 'PATCH') return handleUpdateTrack(req, env, track[1])
     if (track && m === 'DELETE') return handleDelete(env, track[1])
   }
 

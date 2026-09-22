@@ -28,6 +28,12 @@ export function AdminLibrary() {
   // finger/mouse itself has stopped moving (see autoScrollTick below).
   const dragPointerRef = useRef<{ x: number; y: number } | null>(null)
   const autoScrollRafRef = useRef<number | null>(null)
+  // Which track's row is showing the title/artist edit form, if any — only
+  // one at a time, same pattern as the drag state above.
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editArtist, setEditArtist] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
 
   async function reload() {
     // includeDisabled: the admin must still see (and be able to re-enable)
@@ -104,6 +110,37 @@ export function AdminLibrary() {
       await api(`/api/admin/tracks/${trackId}`, { method: 'PATCH', body: { isEnabled: !isEnabled } })
     } catch (err) {
       setResults([`ОШИБКА: ${(err as Error).message}`])
+    }
+    reload()
+  }
+
+  // Blank artist field for the default placeholder rather than showing the
+  // literal "Unknown Artist" text — editing then reads as "fill this in",
+  // not "delete this first".
+  function startEdit(entry: PlaylistEntry) {
+    setEditingId(entry.track.id)
+    setEditTitle(entry.track.title)
+    setEditArtist(entry.track.artist === 'Unknown Artist' ? '' : entry.track.artist)
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+  }
+
+  async function saveEdit(trackId: string) {
+    const title = editTitle.trim()
+    if (!title) {
+      setResults(['ОШИБКА: название не может быть пустым'])
+      return
+    }
+    setSavingEdit(true)
+    try {
+      await api(`/api/admin/tracks/${trackId}`, { method: 'PATCH', body: { title, artist: editArtist } })
+      setEditingId(null)
+    } catch (err) {
+      setResults([`ОШИБКА: ${(err as Error).message}`])
+    } finally {
+      setSavingEdit(false)
     }
     reload()
   }
@@ -290,26 +327,57 @@ export function AdminLibrary() {
             data-track-id={entry.track.id}
             className={dragOrderIds && draggingIdRef.current === entry.track.id ? 'is-dragging' : ''}
           >
-            <div className="admin-library__row">
-              <span
-                className="drag-handle"
-                onPointerDown={(e) => handleHandlePointerDown(e, entry.track.id)}
-                onPointerMove={handleHandlePointerMove}
-                onPointerUp={handleHandlePointerUp}
-                onPointerCancel={handleHandlePointerUp}
-              >
-                ≡
-              </span>
-              <span className="admin-library__label">
-                {entry.position}. {entry.track.artist} — {entry.track.title}
-              </span>
-            </div>
-            <div className="admin-library__actions">
-              <button onClick={() => handleToggle(entry.track.id, entry.track.isEnabled)}>
-                {entry.track.isEnabled ? 'Выключить' : 'Включить'}
-              </button>
-              <button onClick={() => handleDelete(entry.track.id)}>Удалить</button>
-            </div>
+            {editingId === entry.track.id ? (
+              <div className="admin-library__edit">
+                <input
+                  className="admin-library__edit-input"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="Название"
+                  maxLength={200}
+                  autoFocus
+                />
+                <input
+                  className="admin-library__edit-input"
+                  value={editArtist}
+                  onChange={(e) => setEditArtist(e.target.value)}
+                  placeholder="Unknown Artist"
+                  maxLength={200}
+                />
+                <div className="admin-library__actions">
+                  <button onClick={() => saveEdit(entry.track.id)} disabled={savingEdit}>
+                    {savingEdit ? 'СОХРАНЯЮ...' : 'Сохранить'}
+                  </button>
+                  <button onClick={cancelEdit} disabled={savingEdit}>
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="admin-library__row">
+                  <span
+                    className="drag-handle"
+                    onPointerDown={(e) => handleHandlePointerDown(e, entry.track.id)}
+                    onPointerMove={handleHandlePointerMove}
+                    onPointerUp={handleHandlePointerUp}
+                    onPointerCancel={handleHandlePointerUp}
+                  >
+                    ≡
+                  </span>
+                  <span className="admin-library__label">
+                    {entry.position}. {entry.track.artist} — {entry.track.title}
+                  </span>
+                </div>
+                <div className="admin-library__actions">
+                  <button onClick={() => startEdit(entry)}>Изменить</button>
+                  <button onClick={() => handleToggle(entry.track.id, entry.track.isEnabled)}>
+                    {entry.track.isEnabled ? 'Выключить' : 'Включить'}
+                  </button>
+                  <button onClick={() => handleDelete(entry.track.id)}>Удалить</button>
+                </div>
+              </>
+            )}
           </li>
         ))}
       </ul>
