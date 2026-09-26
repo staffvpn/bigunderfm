@@ -1024,11 +1024,22 @@ button {
   gap: 12px;
 }
 
+/* Rounded card, black fill, a thin light-weight border for separation — a
+   deliberate one-off departure from the app's usual sharp-cornered look,
+   per explicit request/reference for this screen specifically. */
 .schedule-screen__item {
   display: flex;
+  flex-direction: column;
   gap: 12px;
-  background: var(--color-surface);
+  background: #000;
+  border: 1px solid var(--color-surface-2);
+  border-radius: 14px;
   padding: 12px;
+}
+
+.schedule-screen__item-main {
+  display: flex;
+  gap: 12px;
 }
 
 .schedule-screen__item-image {
@@ -1036,6 +1047,7 @@ button {
   height: 64px;
   object-fit: cover;
   flex-shrink: 0;
+  border-radius: 8px;
   background: var(--color-surface-2);
 }
 
@@ -1067,6 +1079,36 @@ button {
   opacity: 0.85;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.schedule-screen__remind-button {
+  align-self: flex-start;
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid var(--color-muted);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 800;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+.schedule-screen__remind-button:active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+.schedule-screen__remind-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.schedule-screen__remind-note {
+  font-size: 11px;
+  color: var(--color-muted);
 }
 
 .admin-schedule__form {

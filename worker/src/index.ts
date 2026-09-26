@@ -70,6 +70,17 @@ async function requireAdmin(req: Request, env: Env): Promise<Claims | Response> 
   return claims
 }
 
+/** Any signed-in listener, admin or not — every real Telegram launch already
+    gets a token from handleAuth below, so this doesn't need its own login
+    step. Used by the "remind me" button: it needs a verified telegram_user_id,
+    nothing admin-only. */
+async function requireUser(req: Request, env: Env): Promise<Claims | Response> {
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  const claims = token ? await verifyJwt(token, env.JWT_SECRET) : null
+  if (!claims) return json({ error: 'нужно открыть приложение в Telegram' }, 401)
+  return claims
+}
+
 async function handleAuth(req: Request, env: Env): Promise<Response> {
   const body = (await req.json().catch(() => null)) as { initData?: string } | null
   if (!body?.initData) return json({ error: 'initData is required' }, 400)
@@ -376,8 +387,40 @@ async function handleDeleteEvent(env: Env, id: string): Promise<Response> {
     .first<{ image_path: string | null }>()
   if (!row) return json({ error: 'not found' }, 404)
   await env.DB.prepare('delete from events where id = ?').bind(id).run()
+  await env.DB.prepare('delete from event_reminders where event_id = ?').bind(id).run()
   if (row.image_path) await env.MEDIA.delete(row.image_path)
   return json({ ok: true })
+}
+
+/**
+ * "Напомнить" button on a Schedule card. Any signed-in listener (not just
+ * admins) can subscribe; idempotent, so pressing it again on an event
+ * they're already subscribed to just re-sends the confirmation rather than
+ * erroring or creating a duplicate row. The actual reminder is sent later
+ * by sendDueReminders() below, close to the event's start.
+ */
+async function handleRemindMe(env: Env, eventId: string, telegramUserId: number): Promise<Response> {
+  const event = await env.DB.prepare('select title, event_at from events where id = ?')
+    .bind(eventId)
+    .first<{ title: string; event_at: string }>()
+  if (!event) return json({ error: 'событие не найдено' }, 404)
+  if (new Date(event.event_at).getTime() <= Date.now()) return json({ error: 'событие уже прошло' }, 400)
+
+  await env.DB.prepare(
+    'insert into event_reminders (event_id, telegram_user_id, created_at) values (?, ?, ?) on conflict(event_id, telegram_user_id) do nothing',
+  )
+    .bind(eventId, telegramUserId, nowIso())
+    .run()
+
+  // Best-effort: telling them now also confirms the button actually worked,
+  // separately from whether the bot could reach them (see `messaged` below —
+  // it can't if they've never pressed Start on the bot itself).
+  const sendResult = await callTelegram(env, 'sendMessage', {
+    chat_id: telegramUserId,
+    text: `🔔 Напомню о «${event.title}» — не пропусти!`,
+  }).catch(() => null)
+
+  return json({ ok: true, messaged: Boolean(sendResult?.ok) })
 }
 
 // ---------- admin: stats / actions ----------
@@ -522,6 +565,12 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
   if (m === 'GET' && path === '/api/playlist') return json({ entries: (await listPlaylist(env, false)).map(toEntry) })
   if (m === 'GET' && path === '/api/show-name') return handleShowName(env)
   if (m === 'GET' && path === '/api/events') return handleListEvents(env)
+  const remind = path.match(/^\/api\/events\/([0-9a-f-]{36})\/remind$/)
+  if (remind && m === 'POST') {
+    const auth = await requireUser(req, env)
+    if (auth instanceof Response) return auth
+    return handleRemindMe(env, remind[1], Number(auth.sub))
+  }
   if (path === '/api/presence') {
     const stub = env.PRESENCE.get(env.PRESENCE.idFromName('room'))
     return stub.fetch(req)
@@ -567,7 +616,39 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
   return json({ error: 'not found' }, 404)
 }
 
-// ---------- cron: sample the listener count once a minute ----------
+// ---------- cron: event reminders + listener sampling, once a minute ----------
+
+// How far ahead of an event's start its "напомнить" subscribers get messaged.
+// Independent of EventTicker's 24h "coming soon" banner window on the
+// frontend — this one is the actual nudge, so it's much closer to the event.
+const REMINDER_LEAD_MS = 60 * 60 * 1000
+
+async function sendDueReminders(env: Env): Promise<void> {
+  const horizon = new Date(Date.now() + REMINDER_LEAD_MS).toISOString()
+  const now = nowIso()
+  const { results } = await env.DB.prepare(
+    `select r.event_id, r.telegram_user_id, e.title
+     from event_reminders r
+     join events e on e.id = r.event_id
+     where r.notified_at is null and e.event_at <= ? and e.event_at > ?`,
+  )
+    .bind(horizon, now)
+    .all<{ event_id: string; telegram_user_id: number; title: string }>()
+
+  for (const row of results) {
+    await callTelegram(env, 'sendMessage', {
+      chat_id: row.telegram_user_id,
+      text: `🔔 Через час: «${row.title}» — не пропусти!`,
+    }).catch(() => null)
+    // Marked sent even if Telegram rejected it (e.g. the listener blocked the
+    // bot) — retrying every minute for a delivery that will keep failing
+    // isn't useful, and they already got a subscribe-time confirmation that
+    // would have surfaced that same problem.
+    await env.DB.prepare('update event_reminders set notified_at = ? where event_id = ? and telegram_user_id = ?')
+      .bind(nowIso(), row.event_id, row.telegram_user_id)
+      .run()
+  }
+}
 
 async function sampleListeners(env: Env): Promise<void> {
   let listeners: number
@@ -600,5 +681,6 @@ export default {
   },
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(sampleListeners(env))
+    ctx.waitUntil(sendDueReminders(env))
   },
 }

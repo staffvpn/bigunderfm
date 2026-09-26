@@ -41,3 +41,10 @@ export async function updateEvent(id: string, form: FormData): Promise<void> {
 export async function deleteEvent(id: string): Promise<void> {
   await api(`/api/admin/events/${id}`, { method: 'DELETE' })
 }
+
+/** "Напомнить" button — any signed-in listener, not admin-only. Requires a
+    Telegram session (the app always has one when actually opened inside
+    Telegram); ApiError with status 401 means it wasn't. */
+export async function remindMe(eventId: string): Promise<{ messaged: boolean }> {
+  return api(`/api/events/${eventId}/remind`, { method: 'POST' })
+}
