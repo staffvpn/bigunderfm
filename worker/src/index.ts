@@ -254,7 +254,15 @@ async function handleAdminListEvents(env: Env): Promise<Response> {
 }
 
 function parseEventAt(raw: unknown): Date | null {
-  const date = new Date(String(raw ?? ''))
+  const str = String(raw ?? '')
+  // Require an explicit UTC/offset marker. A naive "YYYY-MM-DDTHH:MM" string
+  // is ambiguous about whose timezone it means, and the JS Date constructor
+  // silently reads it as this runtime's own local time (always UTC on
+  // Cloudflare Workers) — that mismatch is exactly what once saved an
+  // admin's Moscow-time entry three hours off. Reject it outright instead
+  // of guessing.
+  if (!/(Z|[+-]\d{2}:?\d{2})$/.test(str)) return null
+  const date = new Date(str)
   return Number.isNaN(date.getTime()) ? null : date
 }
 
