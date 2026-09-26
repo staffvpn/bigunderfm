@@ -34,9 +34,15 @@ function safeExtension(filename: string | undefined): string {
   return match ? `.${match[1].toLowerCase()}` : ''
 }
 
+/** R2 key for an uploaded file, under an optional folder prefix. Never embeds
+    the original name (spaces / non-ASCII would break Storage/R2 keys). */
+export function buildMediaKey(filename: string | undefined, prefix = ''): string {
+  return `${prefix}${crypto.randomUUID()}${safeExtension(filename)}`
+}
+
 /** R2 key for an uploaded track. Never embeds the original name (spaces / non-ASCII). */
 export function buildTrackKey(filename: string | undefined): string {
-  return `${crypto.randomUUID()}${safeExtension(filename)}`
+  return buildMediaKey(filename)
 }
 
 /** Exact audio Content-Type for an extension, or null if the format is not allowed. */
@@ -51,6 +57,21 @@ export function audioContentType(filename: string | undefined, fallbackMime?: st
       return 'audio/mp4'
   }
   if (fallbackMime === 'audio/mpeg' || fallbackMime === 'audio/mp4' || fallbackMime === 'audio/wav') return fallbackMime
+  return null
+}
+
+/** Exact image Content-Type for an extension, or null if the format is not allowed. */
+export function imageContentType(filename: string | undefined, fallbackMime?: string): string | null {
+  switch (safeExtension(filename)) {
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg'
+    case '.png':
+      return 'image/png'
+    case '.webp':
+      return 'image/webp'
+  }
+  if (fallbackMime === 'image/jpeg' || fallbackMime === 'image/png' || fallbackMime === 'image/webp') return fallbackMime
   return null
 }
 

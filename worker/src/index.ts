@@ -2,13 +2,14 @@ import type { Env } from './env'
 import { handleBotUpdate, callTelegram } from './bot'
 import { signJwt, verifyJwt, type Claims } from './jwt'
 import { verifyInitData } from './telegramAuth'
-import { CORS_HEADERS, audioContentType, buildTrackKey, json, nowIso, safeEqual, sleep } from './util'
+import { CORS_HEADERS, audioContentType, buildMediaKey, buildTrackKey, imageContentType, json, nowIso, safeEqual, sleep } from './util'
 
 export { Presence } from './presence'
 
 const JWT_TTL_SECONDS = 12 * 3600
 const MAX_TRACK_BYTES = 50 * 1024 * 1024
 const MAX_COVER_BYTES = 5 * 1024 * 1024
+const MAX_EVENT_IMAGE_BYTES = 5 * 1024 * 1024
 const DEFAULT_SHOW_NAME = 'LOCAL SELECTS'
 const SAMPLE_RETENTION_DAYS = 90
 // Telegram allows ~30 msg/s; also keeps one request under the Free plan's subrequest cap.
@@ -218,6 +219,159 @@ async function handleSetShowName(req: Request, env: Env): Promise<Response> {
   return json({ name })
 }
 
+// ---------- events / schedule ----------
+
+interface EventRow {
+  id: string
+  title: string
+  description: string
+  event_at: string
+  image_path: string | null
+}
+
+function toEventEntry(env: Env, r: EventRow) {
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description,
+    eventAt: r.event_at,
+    imageUrl: r.image_path ? `${env.R2_PUBLIC_BASE}/${r.image_path}` : null,
+  }
+}
+
+/** Listeners' feed: only events that haven't happened yet, soonest first. */
+async function handleListEvents(env: Env): Promise<Response> {
+  const { results } = await env.DB.prepare('select * from events where event_at >= ? order by event_at asc')
+    .bind(nowIso())
+    .all<EventRow>()
+  return json({ events: results.map((r) => toEventEntry(env, r)) })
+}
+
+/** Admin view: every event, past included, for editing/cleanup. */
+async function handleAdminListEvents(env: Env): Promise<Response> {
+  const { results } = await env.DB.prepare('select * from events order by event_at asc').all<EventRow>()
+  return json({ events: results.map((r) => toEventEntry(env, r)) })
+}
+
+function parseEventAt(raw: unknown): Date | null {
+  const date = new Date(String(raw ?? ''))
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+async function handleCreateEvent(req: Request, env: Env): Promise<Response> {
+  const form = await req.formData().catch(() => null)
+  if (!form) return json({ error: 'invalid form' }, 400)
+
+  const title = String(form.get('title') ?? '').trim()
+  if (!title) return json({ error: 'название не может быть пустым' }, 400)
+  const description = String(form.get('description') ?? '').trim()
+  const eventAt = parseEventAt(form.get('eventAt'))
+  if (!eventAt) return json({ error: 'неверная дата и время' }, 400)
+
+  const image = form.get('image')
+  let imageKey: string | null = null
+  if (isFile(image) && image.size > 0) {
+    if (image.size > MAX_EVENT_IMAGE_BYTES) return json({ error: 'картинка больше 5 МБ' }, 413)
+    const contentType = imageContentType(image.name, image.type)
+    if (!contentType) return json({ error: 'формат картинки не поддерживается — нужен jpg, png или webp' }, 415)
+    imageKey = buildMediaKey(image.name, 'events/')
+    await env.MEDIA.put(imageKey, image.stream(), { httpMetadata: { contentType } })
+  }
+
+  const id = crypto.randomUUID()
+  const now = nowIso()
+  try {
+    await env.DB.prepare(
+      'insert into events (id, title, description, event_at, image_path, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)',
+    )
+      .bind(id, title, description, eventAt.toISOString(), imageKey, now, now)
+      .run()
+    return json({ ok: true, id })
+  } catch (err) {
+    if (imageKey) await env.MEDIA.delete(imageKey).catch(() => {})
+    return json({ error: (err as Error).message }, 500)
+  }
+}
+
+async function handleUpdateEvent(req: Request, env: Env, id: string): Promise<Response> {
+  const form = await req.formData().catch(() => null)
+  if (!form) return json({ error: 'invalid form' }, 400)
+
+  const existing = await env.DB.prepare('select image_path from events where id = ?')
+    .bind(id)
+    .first<{ image_path: string | null }>()
+  if (!existing) return json({ error: 'not found' }, 404)
+
+  const sets: string[] = []
+  const values: unknown[] = []
+
+  if (form.has('title')) {
+    const title = String(form.get('title') ?? '').trim()
+    if (!title) return json({ error: 'название не может быть пустым' }, 400)
+    sets.push('title = ?')
+    values.push(title)
+  }
+  if (form.has('description')) {
+    sets.push('description = ?')
+    values.push(String(form.get('description') ?? '').trim())
+  }
+  if (form.has('eventAt')) {
+    const eventAt = parseEventAt(form.get('eventAt'))
+    if (!eventAt) return json({ error: 'неверная дата и время' }, 400)
+    sets.push('event_at = ?')
+    values.push(eventAt.toISOString())
+  }
+
+  // Either a new image replaces the old one, or removeImage=1 clears it —
+  // never both; a real file always wins if somehow both are sent.
+  let newImageKey: string | null = null
+  let oldImageToDelete: string | null = null
+  const image = form.get('image')
+  if (isFile(image) && image.size > 0) {
+    if (image.size > MAX_EVENT_IMAGE_BYTES) return json({ error: 'картинка больше 5 МБ' }, 413)
+    const contentType = imageContentType(image.name, image.type)
+    if (!contentType) return json({ error: 'формат картинки не поддерживается — нужен jpg, png или webp' }, 415)
+    newImageKey = buildMediaKey(image.name, 'events/')
+    await env.MEDIA.put(newImageKey, image.stream(), { httpMetadata: { contentType } })
+    sets.push('image_path = ?')
+    values.push(newImageKey)
+    if (existing.image_path) oldImageToDelete = existing.image_path
+  } else if (form.get('removeImage') === '1' && existing.image_path) {
+    sets.push('image_path = ?')
+    values.push(null)
+    oldImageToDelete = existing.image_path
+  }
+
+  if (sets.length === 0) {
+    if (newImageKey) await env.MEDIA.delete(newImageKey).catch(() => {})
+    return json({ error: 'nothing to update' }, 400)
+  }
+  sets.push('updated_at = ?')
+  values.push(nowIso())
+  values.push(id)
+
+  try {
+    await env.DB.prepare(`update events set ${sets.join(', ')} where id = ?`)
+      .bind(...values)
+      .run()
+  } catch (err) {
+    if (newImageKey) await env.MEDIA.delete(newImageKey).catch(() => {})
+    return json({ error: (err as Error).message }, 500)
+  }
+  if (oldImageToDelete) await env.MEDIA.delete(oldImageToDelete).catch(() => {})
+  return json({ ok: true })
+}
+
+async function handleDeleteEvent(env: Env, id: string): Promise<Response> {
+  const row = await env.DB.prepare('select image_path from events where id = ?')
+    .bind(id)
+    .first<{ image_path: string | null }>()
+  if (!row) return json({ error: 'not found' }, 404)
+  await env.DB.prepare('delete from events where id = ?').bind(id).run()
+  if (row.image_path) await env.MEDIA.delete(row.image_path)
+  return json({ ok: true })
+}
+
 // ---------- admin: stats / actions ----------
 
 async function onlineCount(env: Env): Promise<number> {
@@ -359,6 +513,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
   if (m === 'POST' && path === '/api/auth/telegram') return handleAuth(req, env)
   if (m === 'GET' && path === '/api/playlist') return json({ entries: (await listPlaylist(env, false)).map(toEntry) })
   if (m === 'GET' && path === '/api/show-name') return handleShowName(env)
+  if (m === 'GET' && path === '/api/events') return handleListEvents(env)
   if (path === '/api/presence') {
     const stub = env.PRESENCE.get(env.PRESENCE.idFromName('room'))
     return stub.fetch(req)
@@ -389,10 +544,16 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (m === 'GET' && path === '/api/admin/online') return json({ online: await onlineCount(env).catch(() => 0) })
     if (m === 'POST' && path === '/api/admin/skip') return handleSkip(env)
     if (m === 'POST' && path === '/api/admin/notify') return handleNotify(req, env)
+    if (m === 'GET' && path === '/api/admin/events') return handleAdminListEvents(env)
+    if (m === 'POST' && path === '/api/admin/events') return handleCreateEvent(req, env)
 
     const track = path.match(/^\/api\/admin\/tracks\/([0-9a-f-]{36})$/)
     if (track && m === 'PATCH') return handleUpdateTrack(req, env, track[1])
     if (track && m === 'DELETE') return handleDelete(env, track[1])
+
+    const event = path.match(/^\/api\/admin\/events\/([0-9a-f-]{36})$/)
+    if (event && m === 'PATCH') return handleUpdateEvent(req, env, event[1])
+    if (event && m === 'DELETE') return handleDeleteEvent(env, event[1])
   }
 
   return json({ error: 'not found' }, 404)

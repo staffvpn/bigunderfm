@@ -403,7 +403,8 @@ button {
 }
 
 .admin-library,
-.admin-radio-controls {
+.admin-radio-controls,
+.admin-schedule {
   padding: 16px;
   padding-bottom: 90px;
   min-height: 100vh;
@@ -412,7 +413,9 @@ button {
 
 .admin-library h2,
 .admin-radio-controls h2,
-.radio-screen h2 {
+.admin-schedule h2,
+.radio-screen h2,
+.schedule-screen h2 {
   display: inline-block;
   background: var(--color-accent);
   color: var(--color-accent-ink);
@@ -630,7 +633,8 @@ button {
 }
 
 .admin-library button,
-.admin-radio-controls button {
+.admin-radio-controls button,
+.admin-schedule button {
   background: transparent;
   color: var(--color-text);
   border: 1px solid var(--color-muted);
@@ -644,10 +648,16 @@ button {
 }
 
 .admin-library button:active,
-.admin-radio-controls button:active {
+.admin-radio-controls button:active,
+.admin-schedule button:active {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-accent-ink);
+}
+
+.admin-schedule button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .admin-radio-controls button:disabled {
@@ -981,6 +991,211 @@ button {
   font-size: 15px;
   text-transform: uppercase;
   letter-spacing: 0.02em;
+}
+
+.schedule-screen {
+  position: relative;
+  min-height: 100vh;
+  /* Unlike .radio-screen (fixed 100vh, overflow hidden) this scrolls —
+     the event list has no fixed length. */
+  overflow-y: auto;
+  background: var(--color-bg);
+}
+
+.schedule-screen__content {
+  padding: 20px 20px 90px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.schedule-screen__empty {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.schedule-screen__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.schedule-screen__item {
+  display: flex;
+  gap: 12px;
+  background: var(--color-surface);
+  padding: 12px;
+}
+
+.schedule-screen__item-image {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--color-surface-2);
+}
+
+.schedule-screen__item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.schedule-screen__item-datetime {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--color-muted);
+}
+
+.schedule-screen__item-title {
+  font-weight: 900;
+  font-size: 15px;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.schedule-screen__item-description {
+  font-size: 13px;
+  color: var(--color-text);
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.admin-schedule__form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-surface-2);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.admin-schedule__form-row {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-schedule__input {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-muted);
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-schedule__input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.admin-schedule__input--textarea {
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* The native file input is visually replaced by this label, same trick as
+   .admin-library__upload-button (see there for why). */
+.admin-schedule__image-button {
+  display: inline-block;
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid var(--color-muted);
+  padding: 8px 10px;
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-schedule__remove-image {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+  font-weight: 700;
+}
+
+.admin-schedule__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-schedule__item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--color-surface-2);
+}
+
+/* Dimmed rather than hidden — admins still need to find and delete stale
+   events, they just shouldn't draw the eye the way an upcoming one does. */
+.admin-schedule__item.is-past {
+  opacity: 0.55;
+}
+
+.admin-schedule__row {
+  display: flex;
+  gap: 12px;
+}
+
+.event-ticker {
+  /* Same edge-to-edge bleed technique as .radio-screen__cover — see its
+     comment for why width alone isn't enough here. */
+  width: calc(100% + 40px);
+  margin: -20px -20px 4px;
+  overflow: hidden;
+  background: var(--color-accent);
+}
+
+.event-ticker__track {
+  display: flex;
+  width: max-content;
+  animation: event-ticker-scroll 14s linear infinite;
+}
+
+.event-ticker__text {
+  display: inline-block;
+  padding: 6px 24px;
+  color: var(--color-accent-ink);
+  font-weight: 900;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+@keyframes event-ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    /* Exactly one copy's width — the duplicate text picks up seamlessly. */
+    transform: translateX(-50%);
+  }
 }
 
 .app__admin-nav {

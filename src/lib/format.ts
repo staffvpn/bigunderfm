@@ -33,3 +33,14 @@ export function formatBytes(bytes: number): string {
   if (mb >= 1024) return `${(mb / 1024).toFixed(2)} ГБ`
   return `${mb.toFixed(0)} МБ`
 }
+
+/** "ПТ 02 ОКТ · 19:00" — an event's date and time, in the viewer's own
+    local timezone (events are stored as UTC ISO strings). */
+export function formatEventDateTime(iso: string): string {
+  const date = new Date(iso)
+  const weekday = date.toLocaleDateString('ru-RU', { weekday: 'short' }).toUpperCase().replace('.', '')
+  const day = String(date.getDate()).padStart(2, '0')
+  const month = date.toLocaleDateString('ru-RU', { month: 'short' }).toUpperCase().replace('.', '')
+  const time = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  return `${weekday} ${day} ${month} · ${time}`
+}

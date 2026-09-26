@@ -5,10 +5,12 @@ import { joinAppPresence } from './lib/presence'
 import { RadioScreen } from './screens/RadioScreen'
 import { AdminLibrary } from './screens/AdminLibrary'
 import { AdminRadioControls } from './screens/AdminRadioControls'
+import { AdminSchedule } from './screens/AdminSchedule'
 import { InfoScreen } from './screens/InfoScreen'
+import { ScheduleScreen } from './screens/ScheduleScreen'
 import { ErrorBoundary } from './components/ErrorBoundary'
 
-type Tab = 'radio' | 'library' | 'controls' | 'info'
+type Tab = 'radio' | 'library' | 'controls' | 'info' | 'schedule'
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false)
@@ -53,9 +55,19 @@ export default function App() {
           <AdminLibrary />
         </ErrorBoundary>
       )}
+      {tab === 'schedule' && isAdmin && (
+        <ErrorBoundary label="Schedule">
+          <AdminSchedule />
+        </ErrorBoundary>
+      )}
       {tab === 'controls' && isAdmin && (
         <ErrorBoundary label="Управление">
           <AdminRadioControls />
+        </ErrorBoundary>
+      )}
+      {tab === 'schedule' && !isAdmin && (
+        <ErrorBoundary label="Schedule">
+          <ScheduleScreen />
         </ErrorBoundary>
       )}
       {tab === 'info' && !isAdmin && (
@@ -67,13 +79,16 @@ export default function App() {
       {isAdmin && (
         <nav className="app__admin-nav">
           <button className={tab === 'radio' ? 'is-active' : ''} onClick={() => setTab('radio')}>
-            Эфир
+            Live
           </button>
           <button className={tab === 'library' ? 'is-active' : ''} onClick={() => setTab('library')}>
-            Библиотека
+            Library
+          </button>
+          <button className={tab === 'schedule' ? 'is-active' : ''} onClick={() => setTab('schedule')}>
+            Schedule
           </button>
           <button className={tab === 'controls' ? 'is-active' : ''} onClick={() => setTab('controls')}>
-            Управление
+            Admin
           </button>
         </nav>
       )}
@@ -83,10 +98,13 @@ export default function App() {
       {!isAdmin && (
         <nav className="app__admin-nav">
           <button className={tab === 'radio' ? 'is-active' : ''} onClick={() => setTab('radio')}>
-            Эфир
+            Live
+          </button>
+          <button className={tab === 'schedule' ? 'is-active' : ''} onClick={() => setTab('schedule')}>
+            Schedule
           </button>
           <button className={tab === 'info' ? 'is-active' : ''} onClick={() => setTab('info')}>
-            Инфо
+            Info
           </button>
         </nav>
       )}

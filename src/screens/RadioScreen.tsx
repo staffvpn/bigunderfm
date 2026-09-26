@@ -5,6 +5,7 @@ import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
 import { fetchShowName, DEFAULT_SHOW_NAME } from '../lib/showName'
 import { formatClock } from '../lib/format'
 import { OnAirBadge } from '../components/OnAirBadge'
+import { EventTicker } from '../components/EventTicker'
 
 // Real, always-on broadcast — Icecast (distribution) + Liquidsoap
 // (scheduling/encoding) running on a dedicated VPS, streaming the shared
@@ -356,6 +357,7 @@ export function RadioScreen() {
   return (
     <div className="radio-screen">
       <div className="radio-screen__content">
+        <EventTicker />
         <div className="radio-screen__header">
           <span className="radio-screen__station">BIGUNDER FM</span>
           <OnAirBadge isPlaying={userStarted && !isPaused && !isBuffering} />
