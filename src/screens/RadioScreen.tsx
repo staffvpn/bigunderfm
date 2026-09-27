@@ -3,9 +3,9 @@ import { STREAM_HOST, STREAM_URL, decodeHtmlEntities } from '../lib/radioServer'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
 import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
 import { fetchShowName, DEFAULT_SHOW_NAME } from '../lib/showName'
-import { formatClock } from '../lib/format'
 import { OnAirBadge } from '../components/OnAirBadge'
 import { EventTicker } from '../components/EventTicker'
+import cornerClip from '../assets/corner-clip.mp4'
 
 // Real, always-on broadcast — Icecast (distribution) + Liquidsoap
 // (scheduling/encoding) running on a dedicated VPS, streaming the shared
@@ -51,14 +51,6 @@ export function RadioScreen() {
   // re-rolled on a 6-hour timer (not per-track; the whole point is a
   // stable "vibe" that outlasts any one track), per explicit request.
   const [background, setBackground] = useState<BackgroundItem | undefined>(() => pickNextBackground())
-  // Wall-clock approximation of playback position — resets to 0 the
-  // moment nowPlaying?.title changes, then ticks up once a second. This
-  // is NOT synced to Icecast's real position (nothing exposes that), so
-  // it can be off by up to one metadata poll interval (~10s); good enough
-  // for a glance-at display, clamped to the track's own known duration so
-  // it never visibly runs past the end.
-  const [elapsedSeconds, setElapsedSeconds] = useState(0)
-  const trackStartRef = useRef<number | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
 
   // isPausedRef mirrors the isPaused state but is readable from the
@@ -130,13 +122,6 @@ export function RadioScreen() {
     // every BACKGROUND_ROTATE_MS instead of every track.
     const backgroundTimer = setInterval(() => setBackground(pickNextBackground()), BACKGROUND_ROTATE_MS)
 
-    // Local elapsed-time clock — see the state comment above for why this
-    // is an approximation rather than a real synced position.
-    const clockTimer = setInterval(() => {
-      if (trackStartRef.current === null) return
-      setElapsedSeconds((Date.now() - trackStartRef.current) / 1000)
-    }, 1000)
-
     // Reflect the audio element's actual state rather than just the click
     // intent — 'waiting' fires while it's connecting/buffering (including
     // the initial connect and any mid-stream stall), 'playing' fires the
@@ -204,7 +189,6 @@ export function RadioScreen() {
     return () => {
       clearInterval(nowPlayingTimer)
       clearInterval(backgroundTimer)
-      clearInterval(clockTimer)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       audio?.removeEventListener('waiting', handleWaiting)
@@ -313,15 +297,6 @@ export function RadioScreen() {
     navigator.mediaSession.playbackState = userStarted && !isPaused ? 'playing' : 'paused'
   }, [userStarted, isPaused])
 
-  // Resets the on-screen clock to 00:00 the moment the broadcast actually
-  // moves to a new track (not on every 10s metadata poll — nowPlaying?.title
-  // only changes value then).
-  useEffect(() => {
-    if (!nowPlaying?.title) return
-    trackStartRef.current = Date.now()
-    setElapsedSeconds(0)
-  }, [nowPlaying?.title])
-
   // Matches Icecast's reported "artist - title" string back to a row in
   // our own playlist so the current track's real duration and what's next
   // in the (strictly sequential, never-shuffled) rotation can be shown —
@@ -352,7 +327,6 @@ export function RadioScreen() {
     effectiveIndex >= 0 && entries.length > 0 ? entries[(effectiveIndex + 1) % entries.length] : undefined
 
   const showConnecting = userStarted && !isPaused && isBuffering
-  const clockSeconds = currentEntry ? Math.min(elapsedSeconds, currentEntry.track.durationSeconds) : elapsedSeconds
 
   return (
     <div className="radio-screen">
@@ -408,7 +382,20 @@ export function RadioScreen() {
               </span>
             )}
           </div>
-          <span className="radio-screen__duration">{formatClock(clockSeconds)}</span>
+          {/* Replaces the old elapsed-time readout, per explicit request —
+              it was never a real synced position anyway (see the removed
+              state's comment history), just a rough approximation nobody
+              found useful. Muted/autoplay/playsInline so mobile WebViews
+              (Telegram's included) actually loop it inline. */}
+          <video
+            className="radio-screen__corner-clip"
+            src={cornerClip}
+            autoPlay
+            loop
+            muted
+            playsInline
+            aria-hidden="true"
+          />
         </div>
 
         <div className="radio-screen__spacer" aria-hidden="true" />

@@ -279,12 +279,14 @@ button {
   overflow-wrap: anywhere;
 }
 
-.radio-screen__duration {
+/* Small looping clip in the corner where the elapsed-time readout used to
+   sit — same slot, same rough visual weight, just not text. */
+.radio-screen__corner-clip {
   flex-shrink: 0;
-  font-size: 48px;
-  font-weight: 900;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  background: var(--color-surface);
 }
 
 .progress-bar {
