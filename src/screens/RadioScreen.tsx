@@ -86,11 +86,6 @@ export function RadioScreen() {
   // repeatedly. A plain ref flips synchronously and is read/set before
   // either invocation yields, so the second call sees it immediately.
   const connectingRef = useRef(false)
-  // Retry loop for the OS silently pausing playback out from under us — a
-  // phone call, Siri, another app briefly grabbing the audio session. See
-  // handleNativePause below for why it can't share the short, hard-capped
-  // backoff used for dropped network connections.
-  const interruptionRetryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     fetchPlaylist().then(setEntries)
@@ -188,56 +183,15 @@ export function RadioScreen() {
     function handleWaiting() {
       setIsBuffering(true)
     }
-    function stopInterruptionRetry() {
-      if (interruptionRetryTimerRef.current) {
-        clearInterval(interruptionRetryTimerRef.current)
-        interruptionRetryTimerRef.current = null
-      }
-    }
-
     function handlePlaying() {
       connectingRef.current = false
       setIsBuffering(false)
       setConnectError(false)
       reconnectAttemptsRef.current = 0
-      stopInterruptionRetry()
     }
     function handleAudioError() {
       connectingRef.current = false
-      stopInterruptionRetry()
       scheduleReconnect()
-    }
-    // The OS can pause an already-playing element on its own — most
-    // commonly a phone call (also Siri, or another app briefly grabbing
-    // the audio session) — without ever firing 'error'/'stalled'/'ended',
-    // so none of the handlers above see it. iOS in particular never
-    // resumes this by itself once the interruption ends, and there's no
-    // event that says exactly when that is, so this just keeps trying
-    // every few seconds until it works or the user actually taps pause.
-    // Deliberately its own uncapped retry loop rather than routing through
-    // scheduleReconnect's short exponential backoff: a call can run far
-    // longer than that budget allows, and giving up mid-call would surface
-    // a "не удалось подключиться" error the user never asked to see.
-    //
-    // Guarded by isPausedRef/connectingRef rather than a separate "did we
-    // cause this" flag — both are already set synchronously (isPausedRef
-    // directly inside setPlaybackIntent, not only via the delayed
-    // isPaused-state-sync effect) at the exact moment WE pause or start
-    // (re)connecting, before any resulting native 'pause' event can fire,
-    // so a pause we caused ourselves is never mistaken for an interruption.
-    function handleNativePause() {
-      if (!audio || isPausedRef.current || connectingRef.current || interruptionRetryTimerRef.current) return
-      setIsBuffering(true)
-      connectingRef.current = true
-      audio.src = STREAM_URL
-      audio.play().catch(() => {})
-      interruptionRetryTimerRef.current = setInterval(() => {
-        if (isPausedRef.current || !audio.paused) {
-          stopInterruptionRetry()
-          return
-        }
-        audio.play().catch(() => {})
-      }, 5000)
     }
     // A live stream "ending" is never intentional on the server side —
     // treat it exactly like a dropped connection.
@@ -246,7 +200,6 @@ export function RadioScreen() {
     audio?.addEventListener('playing', handlePlaying)
     audio?.addEventListener('error', handleAudioError)
     audio?.addEventListener('ended', handleAudioError)
-    audio?.addEventListener('pause', handleNativePause)
 
     return () => {
       clearInterval(nowPlayingTimer)
@@ -254,13 +207,11 @@ export function RadioScreen() {
       clearInterval(clockTimer)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
-      stopInterruptionRetry()
       audio?.removeEventListener('waiting', handleWaiting)
       audio?.removeEventListener('stalled', handleWaiting)
       audio?.removeEventListener('playing', handlePlaying)
       audio?.removeEventListener('error', handleAudioError)
       audio?.removeEventListener('ended', handleAudioError)
-      audio?.removeEventListener('pause', handleNativePause)
       audio?.pause()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -273,22 +224,12 @@ export function RadioScreen() {
 
     setUserStarted(true)
     setIsPaused(!playing)
-    // Also set synchronously, not only via the isPaused-state-sync effect a
-    // couple renders away — handleNativePause reads this to tell our own
-    // pause/reconnect calls apart from the OS pausing us on its own, and it
-    // must see the real value before the native 'pause' event this function
-    // is about to trigger can fire.
-    isPausedRef.current = !playing
 
     if (!playing) {
       // An explicit pause cancels any in-flight reconnect attempt — a
       // drop-triggered retry landing a second after the user paused would
       // otherwise silently start the stream back up underneath them.
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
-      if (interruptionRetryTimerRef.current) {
-        clearInterval(interruptionRetryTimerRef.current)
-        interruptionRetryTimerRef.current = null
-      }
       reconnectAttemptsRef.current = 0
       connectingRef.current = false
       setIsBuffering(false)
@@ -335,14 +276,10 @@ export function RadioScreen() {
   }
 
   function handlePlayClick() {
-    // No "ignore taps while buffering" guard here on purpose: isPaused is
-    // already false for the whole time this screen is buffering (a fresh
-    // connect, a reconnect, or an OS-interruption retry), so a tap in that
-    // state always calls setPlaybackIntent(false) below — a pause/cancel,
-    // never a second overlapping connection attempt. Blocking the tap
-    // instead used to mean a buffering state that got stuck (as one did —
-    // see handleNativePause) left the button completely unresponsive, with
-    // no way out short of closing the app.
+    // Ignore taps while a connection attempt is already in flight — a
+    // second overlapping audio.load()/play() here just restarts the
+    // buffering clock rather than doing anything useful.
+    if (isBuffering) return
     setPlaybackIntent(isPaused)
   }
 
@@ -479,6 +416,7 @@ export function RadioScreen() {
         <button
           className={`radio-screen__play${isBuffering ? ' radio-screen__play--buffering' : ''}`}
           onClick={handlePlayClick}
+          disabled={userStarted && !isPaused && isBuffering}
         >
           {/* CSS-drawn shapes, not Unicode glyphs (▶ renders as a colored
               emoji glyph on iOS instead of a plain triangle) — this way play
