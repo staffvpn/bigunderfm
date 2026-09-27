@@ -86,17 +86,10 @@ export function RadioScreen() {
   // repeatedly. A plain ref flips synchronously and is read/set before
   // either invocation yields, so the second call sees it immediately.
   const connectingRef = useRef(false)
-  // Distinguishes our own audio.pause()/src reassignments from the OS
-  // silently pausing playback out from under us — a phone call, Siri,
-  // another app briefly grabbing the audio session. Both fire the same
-  // native 'pause' event on the element, and only the second one should
-  // trigger a resume attempt. Set to true immediately before any
-  // programmatic pause/reload, and consumed (reset) by the first 'pause'
-  // that follows.
-  const intentionalPauseRef = useRef(false)
-  // Retry loop for exactly that OS-interruption case — see handleNativePause
-  // below for why it can't share the short, hard-capped backoff used for
-  // dropped network connections.
+  // Retry loop for the OS silently pausing playback out from under us — a
+  // phone call, Siri, another app briefly grabbing the audio session. See
+  // handleNativePause below for why it can't share the short, hard-capped
+  // backoff used for dropped network connections.
   const interruptionRetryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
@@ -158,7 +151,6 @@ export function RadioScreen() {
 
     function reconnect() {
       if (!audio) return
-      intentionalPauseRef.current = true
       connectingRef.current = true
       audio.src = STREAM_URL
       audio.play().catch(() => {})
@@ -212,6 +204,7 @@ export function RadioScreen() {
     }
     function handleAudioError() {
       connectingRef.current = false
+      stopInterruptionRetry()
       scheduleReconnect()
     }
     // The OS can pause an already-playing element on its own — most
@@ -225,14 +218,17 @@ export function RadioScreen() {
     // scheduleReconnect's short exponential backoff: a call can run far
     // longer than that budget allows, and giving up mid-call would surface
     // a "не удалось подключиться" error the user never asked to see.
+    //
+    // Guarded by isPausedRef/connectingRef rather than a separate "did we
+    // cause this" flag — both are already set synchronously (isPausedRef
+    // directly inside setPlaybackIntent, not only via the delayed
+    // isPaused-state-sync effect) at the exact moment WE pause or start
+    // (re)connecting, before any resulting native 'pause' event can fire,
+    // so a pause we caused ourselves is never mistaken for an interruption.
     function handleNativePause() {
-      if (intentionalPauseRef.current) {
-        intentionalPauseRef.current = false
-        return
-      }
-      if (!audio || isPausedRef.current || interruptionRetryTimerRef.current) return
+      if (!audio || isPausedRef.current || connectingRef.current || interruptionRetryTimerRef.current) return
       setIsBuffering(true)
-      intentionalPauseRef.current = true
+      connectingRef.current = true
       audio.src = STREAM_URL
       audio.play().catch(() => {})
       interruptionRetryTimerRef.current = setInterval(() => {
@@ -240,7 +236,6 @@ export function RadioScreen() {
           stopInterruptionRetry()
           return
         }
-        intentionalPauseRef.current = true
         audio.play().catch(() => {})
       }, 5000)
     }
@@ -278,6 +273,12 @@ export function RadioScreen() {
 
     setUserStarted(true)
     setIsPaused(!playing)
+    // Also set synchronously, not only via the isPaused-state-sync effect a
+    // couple renders away — handleNativePause reads this to tell our own
+    // pause/reconnect calls apart from the OS pausing us on its own, and it
+    // must see the real value before the native 'pause' event this function
+    // is about to trigger can fire.
+    isPausedRef.current = !playing
 
     if (!playing) {
       // An explicit pause cancels any in-flight reconnect attempt — a
@@ -292,7 +293,6 @@ export function RadioScreen() {
       connectingRef.current = false
       setIsBuffering(false)
       setConnectError(false)
-      intentionalPauseRef.current = true
       audio.pause()
       return
     }
@@ -326,7 +326,6 @@ export function RadioScreen() {
     // always joins wherever the broadcast currently is, exactly like tuning
     // in a real radio station. Reassigning `src` forces a fresh connection
     // rather than resuming a stale/stalled buffer from before a pause.
-    intentionalPauseRef.current = true
     if (audio.src !== STREAM_URL) {
       audio.src = STREAM_URL
     } else {
@@ -336,10 +335,14 @@ export function RadioScreen() {
   }
 
   function handlePlayClick() {
-    // Ignore taps while a connection attempt is already in flight — a
-    // second overlapping audio.load()/play() here just restarts the
-    // buffering clock rather than doing anything useful.
-    if (isBuffering) return
+    // No "ignore taps while buffering" guard here on purpose: isPaused is
+    // already false for the whole time this screen is buffering (a fresh
+    // connect, a reconnect, or an OS-interruption retry), so a tap in that
+    // state always calls setPlaybackIntent(false) below — a pause/cancel,
+    // never a second overlapping connection attempt. Blocking the tap
+    // instead used to mean a buffering state that got stuck (as one did —
+    // see handleNativePause) left the button completely unresponsive, with
+    // no way out short of closing the app.
     setPlaybackIntent(isPaused)
   }
 
@@ -476,7 +479,6 @@ export function RadioScreen() {
         <button
           className={`radio-screen__play${isBuffering ? ' radio-screen__play--buffering' : ''}`}
           onClick={handlePlayClick}
-          disabled={userStarted && !isPaused && isBuffering}
         >
           {/* CSS-drawn shapes, not Unicode glyphs (▶ renders as a colored
               emoji glyph on iOS instead of a plain triangle) — this way play
