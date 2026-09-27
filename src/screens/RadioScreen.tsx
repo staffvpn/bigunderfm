@@ -428,7 +428,22 @@ export function RadioScreen() {
           <div className="radio-screen__error">Не удалось подключиться. Нажмите play, чтобы попробовать снова.</div>
         )}
 
-        <audio ref={audioRef} crossOrigin="anonymous" preload="none" />
+        {/* No crossOrigin here. It was only ever needed for a Web Audio
+            equalizer tap (useAudioAnalyser.ts) that isn't used by this
+            screen any more (the poster-style redesign replaced the canvas
+            visualizer with the background image/video) — but the attribute
+            itself stayed, reintroduced by an old blanket revert commit
+            (e62e83d) without anyone re-deciding it was still needed. This
+            codebase already has a confirmed, repeated finding for the
+            EXACT same element: crossOrigin has broken this Icecast stream
+            specifically on iOS/iPadOS WebKit before (originally surfaced as
+            seeking always landing back at 0:00, see fa385d0 — that symptom
+            went away only because the later switch to a live stream removed
+            seeking entirely, not because the underlying WebKit issue with
+            crossOrigin on this stream was ever fixed). The server already
+            sends a correct `Access-Control-Allow-Origin: *`, so this was
+            never required for playback itself either way. */}
+        <audio ref={audioRef} preload="none" />
       </div>
     </div>
   )
