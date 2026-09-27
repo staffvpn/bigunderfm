@@ -279,14 +279,23 @@ button {
   overflow-wrap: anywhere;
 }
 
-/* Small looping clip in the corner where the elapsed-time readout used to
-   sit — same slot, same rough visual weight, just not text. */
+/* Looping clip in the corner where the elapsed-time readout used to sit —
+   sized to actually read as a video, not a cropped icon, and kept at the
+   source's own 16:9 aspect (object-fit: contain) rather than a square
+   crop that cut into the artwork. */
 .radio-screen__corner-clip {
   flex-shrink: 0;
-  width: 56px;
-  height: 56px;
-  object-fit: cover;
+  width: 128px;
+  height: 72px;
+  object-fit: contain;
   background: var(--color-surface);
+}
+
+@media (max-width: 380px) {
+  .radio-screen__corner-clip {
+    width: 104px;
+    height: 58px;
+  }
 }
 
 .progress-bar {
