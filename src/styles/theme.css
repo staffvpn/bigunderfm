@@ -1,5 +1,5 @@
 :root {
-  --color-bg: #151515;
+  --color-bg: #000000;
   --color-surface: #1f1f1f;
   --color-surface-2: #262626;
   --color-text: #f2f2f0;
@@ -131,7 +131,7 @@ button {
   }
   50%,
   100% {
-    background: #151515;
+    background: var(--color-bg);
   }
 }
 
@@ -205,7 +205,7 @@ button {
 .radio-screen__cover-scrim {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(21, 21, 21, 0.8) 0%, rgba(21, 21, 21, 0.15) 55%, rgba(21, 21, 21, 0) 100%);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 100%);
 }
 
 /* Wraps artist + title together above the scrim — the artist line used to
