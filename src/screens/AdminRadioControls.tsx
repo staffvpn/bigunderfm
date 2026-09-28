@@ -309,10 +309,10 @@ export function AdminRadioControls() {
                 title={l.username ? `@${l.username}` : String(l.telegramUserId)}
               >
                 {copiedId === l.telegramUserId ? (
-                  '✓'
+                  <span className="admin-listeners__copy-check">✓</span>
                 ) : (
-                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="8" y="8" width="14" height="14" rx="3" ry="3" />
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="8" y="8" width="14" height="14" rx="4" ry="4" />
                     <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
                   </svg>
                 )}

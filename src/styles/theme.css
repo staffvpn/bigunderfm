@@ -879,25 +879,30 @@ button {
   animation: on-air-dot-blink 1.4s step-start infinite;
 }
 
+/* Bare icon, no circle/border around it — at this size and against the
+   dark background a low-contrast outline just read as a smudged square
+   instead of a clean button. */
 .admin-listeners__copy-button {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
+  width: 34px;
+  height: 34px;
   padding: 0;
-  background: transparent;
+  background: none;
+  border: none;
   color: var(--color-muted);
-  border: 1px solid var(--color-surface-2);
-  border-radius: 50%;
-  font-size: 12px;
   cursor: pointer;
 }
 
 .admin-listeners__copy-button:active {
   color: var(--color-text);
-  border-color: var(--color-muted);
+}
+
+.admin-listeners__copy-check {
+  font-size: 16px;
+  color: #2ecc40;
 }
 
 .admin-dashboard__show-name {
