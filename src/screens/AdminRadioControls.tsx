@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import { fetchIcecastStatus, type IcecastStatus } from '../lib/radioServer'
 import { fetchAdminStats, STORAGE_LIMIT_BYTES, type AdminStats } from '../lib/adminStats'
 import { fetchShowName, updateShowName } from '../lib/showName'
+import { fetchListeners, type Listener } from '../lib/listeners'
 import { formatDuration, formatElapsedSince, formatBytes } from '../lib/format'
 
 // Above this fraction of the free R2 allowance, flag it.
@@ -39,6 +40,7 @@ export function AdminRadioControls() {
   const [notifying, setNotifying] = useState(false)
   const [notifyResult, setNotifyResult] = useState<string | null>(null)
   const [notifyError, setNotifyError] = useState<string | null>(null)
+  const [listeners, setListeners] = useState<Listener[] | null>(null)
 
   useEffect(() => {
     // Slow-changing numbers (peaks, storage, histogram): one fetch per visit.
@@ -47,6 +49,7 @@ export function AdminRadioControls() {
       if (s) setAppOpenCount(s.online)
     })
     fetchShowName().then(setShowNameInput)
+    fetchListeners().then(setListeners)
 
     async function pollStream() {
       const result = await fetchIcecastStatus()
@@ -241,6 +244,32 @@ export function AdminRadioControls() {
         </div>
         <p className="admin-dashboard__chart-caption">
           По часам суток (твоё местное время), за всё время работы приложения.
+        </p>
+      </div>
+
+      <div className="admin-dashboard__chart">
+        <div className="admin-dashboard__chart-header">
+          <span className="admin-dashboard__chart-label">СЛУШАТЕЛИ</span>
+          <span className="admin-dashboard__chart-total">{listeners?.length ?? 0} всего</span>
+        </div>
+        <ul className="admin-listeners__box">
+          {(listeners ?? []).map((l) => (
+            <li key={l.telegramUserId} className="admin-listeners__row">
+              <div className="admin-listeners__identity">
+                <span className="admin-listeners__name">
+                  {l.name ?? `id ${l.telegramUserId}`}
+                  {l.isAdmin && <span className="admin-listeners__badge">админ</span>}
+                </span>
+                {l.username && <span className="admin-listeners__username">@{l.username}</span>}
+              </div>
+              <span className="admin-listeners__hours">{formatDuration(l.totalSeconds)}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="admin-dashboard__chart-caption">
+          {listeners !== null && listeners.length === 0
+            ? 'Пока никто не заходил.'
+            : 'Часы — реальное время со звуком, не просто открытое приложение. Отсортировано по убыванию.'}
         </p>
       </div>
 

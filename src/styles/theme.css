@@ -807,6 +807,68 @@ button {
   margin: 4px 0 0;
 }
 
+.admin-listeners__box {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-surface-2);
+}
+
+.admin-listeners__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-surface-2);
+}
+
+.admin-listeners__row:last-child {
+  border-bottom: none;
+}
+
+.admin-listeners__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-listeners__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.admin-listeners__badge {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-accent-ink);
+  background: var(--color-accent);
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+
+.admin-listeners__username {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.admin-listeners__hours {
+  flex-shrink: 0;
+  font-weight: 800;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
 .admin-dashboard__show-name {
   display: flex;
   flex-direction: column;

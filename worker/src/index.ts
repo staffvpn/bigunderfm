@@ -85,16 +85,30 @@ async function handleAuth(req: Request, env: Env): Promise<Response> {
   const body = (await req.json().catch(() => null)) as { initData?: string } | null
   if (!body?.initData) return json({ error: 'initData is required' }, 400)
 
-  const { valid, telegramUserId } = await verifyInitData(body.initData, env.TELEGRAM_BOT_TOKEN)
+  const { valid, telegramUserId, profile } = await verifyInitData(body.initData, env.TELEGRAM_BOT_TOKEN)
   if (!valid || telegramUserId === null) return json({ isAdmin: false })
 
   const adminRow = await env.DB.prepare('select 1 as ok from admins where telegram_user_id = ?').bind(telegramUserId).first()
   const isAdmin = Boolean(adminRow)
+  const now = nowIso()
 
-  await env.DB.prepare('insert into login_events (telegram_user_id, is_admin, created_at) values (?, ?, ?)')
-    .bind(telegramUserId, isAdmin ? 1 : 0, nowIso())
-    .run()
-    .catch((err) => console.error('login_events insert failed', err))
+  // Batched: the login record (for the hourly-opens chart) and the
+  // listener's own display name (refreshed on every login — a first/last
+  // name or @username can change) go together, one round trip.
+  await env.DB.batch([
+    env.DB.prepare('insert into login_events (telegram_user_id, is_admin, created_at) values (?, ?, ?)').bind(
+      telegramUserId,
+      isAdmin ? 1 : 0,
+      now,
+    ),
+    env.DB.prepare(
+      `insert into users (telegram_user_id, first_name, last_name, username, first_seen_at, last_seen_at)
+       values (?, ?, ?, ?, ?, ?)
+       on conflict(telegram_user_id) do update set
+         first_name = excluded.first_name, last_name = excluded.last_name,
+         username = excluded.username, last_seen_at = excluded.last_seen_at`,
+    ).bind(telegramUserId, profile?.firstName ?? null, profile?.lastName ?? null, profile?.username ?? null, now, now),
+  ]).catch((err) => console.error('login/user upsert failed', err))
 
   const token = await signJwt(
     { sub: String(telegramUserId), admin: isAdmin, exp: Math.floor(Date.now() / 1000) + JWT_TTL_SECONDS },
@@ -423,6 +437,83 @@ async function handleRemindMe(env: Env, eventId: string, telegramUserId: number)
   return json({ ok: true, messaged: Boolean(sendResult?.ok) })
 }
 
+// ---------- listening time ----------
+
+// Generous vs. the client's 30s ping interval — absorbs mobile timer
+// throttling (a backgrounded tab/WebView can delay the next heartbeat by
+// well over 30s) without a missed beat ever inflating the total; a gap
+// longer than this is treated as "not actually listening for that
+// stretch" and simply isn't counted, rather than guessed at.
+const HEARTBEAT_CAP_SECONDS = 90
+
+/**
+ * "Напомнить"-style ping from RadioScreen while audio is genuinely playing
+ * (see the ON AIR badge condition) — every heartbeat adds the elapsed time
+ * since the previous one (capped) to that listener's running total, so
+ * listening time survives the app being killed outright: at worst the
+ * final incomplete interval (up to HEARTBEAT_CAP_SECONDS) goes uncounted,
+ * never double-counted or inflated.
+ */
+async function handleHeartbeat(env: Env, telegramUserId: number): Promise<Response> {
+  const now = nowIso()
+  const row = await env.DB.prepare('select last_heartbeat_at from listen_stats where telegram_user_id = ?')
+    .bind(telegramUserId)
+    .first<{ last_heartbeat_at: string | null }>()
+
+  if (!row) {
+    await env.DB.prepare('insert into listen_stats (telegram_user_id, total_seconds, last_heartbeat_at) values (?, 0, ?)')
+      .bind(telegramUserId, now)
+      .run()
+    return json({ ok: true })
+  }
+
+  let addSeconds = 0
+  if (row.last_heartbeat_at) {
+    const gap = (Date.now() - new Date(row.last_heartbeat_at).getTime()) / 1000
+    if (gap > 0) addSeconds = Math.min(gap, HEARTBEAT_CAP_SECONDS)
+  }
+  await env.DB.prepare('update listen_stats set total_seconds = total_seconds + ?, last_heartbeat_at = ? where telegram_user_id = ?')
+    .bind(addSeconds, now, telegramUserId)
+    .run()
+  return json({ ok: true })
+}
+
+interface ListenerRow {
+  telegram_user_id: number
+  first_name: string | null
+  last_name: string | null
+  username: string | null
+  last_seen_at: string
+  total_seconds: number | null
+  is_admin: number | null
+}
+
+/** Admin "Слушатели" list: every listener who has ever logged in, name
+    (from Telegram, refreshed on each login), total listening time and
+    when last seen — sorted by listening time so the most engaged
+    listeners surface first. */
+async function handleAdminListeners(env: Env): Promise<Response> {
+  const { results } = await env.DB.prepare(
+    `select u.telegram_user_id, u.first_name, u.last_name, u.username, u.last_seen_at,
+            coalesce(s.total_seconds, 0) as total_seconds,
+            (select 1 from admins a where a.telegram_user_id = u.telegram_user_id) as is_admin
+     from users u
+     left join listen_stats s on s.telegram_user_id = u.telegram_user_id
+     order by total_seconds desc, u.last_seen_at desc`,
+  ).all<ListenerRow>()
+
+  return json({
+    listeners: results.map((r) => ({
+      telegramUserId: r.telegram_user_id,
+      name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || null,
+      username: r.username,
+      lastSeenAt: r.last_seen_at,
+      totalSeconds: r.total_seconds ?? 0,
+      isAdmin: Boolean(r.is_admin),
+    })),
+  })
+}
+
 // ---------- admin: stats / actions ----------
 
 async function onlineCount(env: Env): Promise<number> {
@@ -575,6 +666,11 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     const stub = env.PRESENCE.get(env.PRESENCE.idFromName('room'))
     return stub.fetch(req)
   }
+  if (m === 'POST' && path === '/api/listen/heartbeat') {
+    const auth = await requireUser(req, env)
+    if (auth instanceof Response) return auth
+    return handleHeartbeat(env, Number(auth.sub))
+  }
 
   // telegram bot webhook
   if (m === 'POST' && path === '/bot/webhook') {
@@ -603,6 +699,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (m === 'POST' && path === '/api/admin/notify') return handleNotify(req, env)
     if (m === 'GET' && path === '/api/admin/events') return handleAdminListEvents(env)
     if (m === 'POST' && path === '/api/admin/events') return handleCreateEvent(req, env)
+    if (m === 'GET' && path === '/api/admin/listeners') return handleAdminListeners(env)
 
     const track = path.match(/^\/api\/admin\/tracks\/([0-9a-f-]{36})$/)
     if (track && m === 'PATCH') return handleUpdateTrack(req, env, track[1])

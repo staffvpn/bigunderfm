@@ -53,9 +53,13 @@ describe('jwt', () => {
 describe('verifyInitData', () => {
   const now = Math.floor(Date.now() / 1000)
 
-  it('accepts genuine initData and returns the user id', async () => {
+  it('accepts genuine initData and returns the user id and profile', async () => {
     const data = await makeInitData('123:TOKEN', 929887068, now - 10)
-    expect(await verifyInitData(data, '123:TOKEN')).toEqual({ valid: true, telegramUserId: 929887068 })
+    expect(await verifyInitData(data, '123:TOKEN')).toEqual({
+      valid: true,
+      telegramUserId: 929887068,
+      profile: { firstName: 'T', lastName: null, username: null },
+    })
   })
 
   it('rejects data signed with another bot token', async () => {

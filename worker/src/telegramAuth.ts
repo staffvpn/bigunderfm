@@ -13,18 +13,32 @@ function toHex(buf: ArrayBuffer): string {
     .join('')
 }
 
+export interface TelegramProfile {
+  firstName: string | null
+  lastName: string | null
+  username: string | null
+}
+
+export interface VerifyResult {
+  valid: boolean
+  telegramUserId: number | null
+  profile: TelegramProfile | null
+}
+
+const INVALID: VerifyResult = { valid: false, telegramUserId: null, profile: null }
+
 export async function verifyInitData(
   initData: string,
   botToken: string,
   nowSeconds: number = Date.now() / 1000,
-): Promise<{ valid: boolean; telegramUserId: number | null }> {
+): Promise<VerifyResult> {
   const params = new URLSearchParams(initData)
   const hash = params.get('hash')
-  if (!hash) return { valid: false, telegramUserId: null }
+  if (!hash) return INVALID
   params.delete('hash')
 
   const authDate = Number(params.get('auth_date'))
-  if (!authDate || nowSeconds - authDate > MAX_INIT_DATA_AGE_SECONDS) return { valid: false, telegramUserId: null }
+  if (!authDate || nowSeconds - authDate > MAX_INIT_DATA_AGE_SECONDS) return INVALID
 
   const dataCheckString = Array.from(params.entries())
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -33,14 +47,25 @@ export async function verifyInitData(
 
   const secretKey = await hmac(enc.encode('WebAppData'), botToken)
   const computed = toHex(await hmac(secretKey, dataCheckString))
-  if (computed !== hash) return { valid: false, telegramUserId: null }
+  if (computed !== hash) return INVALID
 
   const userJson = params.get('user')
   let telegramUserId: number | null = null
+  let profile: TelegramProfile | null = null
   try {
-    telegramUserId = userJson ? Number(JSON.parse(userJson).id) : null
+    if (userJson) {
+      const user = JSON.parse(userJson)
+      telegramUserId = Number(user.id)
+      profile = {
+        firstName: typeof user.first_name === 'string' ? user.first_name : null,
+        lastName: typeof user.last_name === 'string' ? user.last_name : null,
+        username: typeof user.username === 'string' ? user.username : null,
+      }
+    }
   } catch {
     telegramUserId = null
+    profile = null
   }
-  return { valid: telegramUserId !== null && Number.isFinite(telegramUserId), telegramUserId }
+  const valid = telegramUserId !== null && Number.isFinite(telegramUserId)
+  return { valid, telegramUserId, profile: valid ? profile : null }
 }

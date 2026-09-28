@@ -3,6 +3,7 @@ import { STREAM_HOST, STREAM_URL, decodeHtmlEntities } from '../lib/radioServer'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
 import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
 import { fetchShowName, DEFAULT_SHOW_NAME } from '../lib/showName'
+import { sendListenHeartbeat } from '../lib/listeners'
 import { OnAirBadge } from '../components/OnAirBadge'
 import { EventTicker } from '../components/EventTicker'
 import cornerClip from '../assets/corner-clip.mp4'
@@ -296,6 +297,21 @@ export function RadioScreen() {
     if (!('mediaSession' in navigator)) return
     navigator.mediaSession.playbackState = userStarted && !isPaused ? 'playing' : 'paused'
   }, [userStarted, isPaused])
+
+  // Feeds the admin "Слушатели" list's per-person listening time — same
+  // "genuinely playing" condition as the ON AIR badge, not just "app open"
+  // (that's the separate, anonymous presence count). One ping right away
+  // so a short listen still counts for something, then every 30s while it
+  // keeps playing; the server adds up the gaps between pings itself, so
+  // missing the final one (app killed outright) just undercounts by under
+  // a minute rather than losing the whole session.
+  useEffect(() => {
+    const isPlaying = userStarted && !isPaused && !isBuffering
+    if (!isPlaying) return
+    sendListenHeartbeat()
+    const timer = setInterval(sendListenHeartbeat, 30_000)
+    return () => clearInterval(timer)
+  }, [userStarted, isPaused, isBuffering])
 
   // Matches Icecast's reported "artist - title" string back to a row in
   // our own playlist so the current track's real duration and what's next
