@@ -7,6 +7,9 @@ export interface Listener {
   lastSeenAt: string
   totalSeconds: number
   isAdmin: boolean
+  /** A heartbeat landed within the last minute — very likely still
+      listening right now, not just "at some point". */
+  listeningNow: boolean
 }
 
 /** Ping while audio is genuinely playing — see RadioScreen's heartbeat
@@ -22,7 +25,8 @@ export async function sendListenHeartbeat(): Promise<void> {
 }
 
 /** Admin "Слушатели" list — everyone who has ever logged in, with their
-    cumulative listening time, sorted by that time (most engaged first). */
+    cumulative listening time. Sorted with whoever's listening right now
+    first, then by total time. */
 export async function fetchListeners(): Promise<Listener[]> {
   try {
     const data = await api<{ listeners: Listener[] }>('/api/admin/listeners')

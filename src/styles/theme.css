@@ -870,6 +870,15 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.admin-listeners__live-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2ecc40;
+  animation: on-air-dot-blink 1.4s step-start infinite;
+}
+
 .admin-listeners__copy-button {
   display: flex;
   align-items: center;

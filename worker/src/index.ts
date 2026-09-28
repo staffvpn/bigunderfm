@@ -485,22 +485,37 @@ interface ListenerRow {
   username: string | null
   last_seen_at: string
   total_seconds: number | null
+  last_heartbeat_at: string | null
   is_admin: number | null
 }
 
-/** Admin "Слушатели" list: every listener who has ever logged in, name
-    (from Telegram, refreshed on each login), total listening time and
-    when last seen — sorted by listening time so the most engaged
-    listeners surface first. */
+// A heartbeat lands every 30s while someone is genuinely playing (see
+// handleHeartbeat) — a gap under a minute since their last one means
+// they're very likely still listening right now, not just "were, at some
+// point". Same idea as FAILURES_BEFORE_WARNING elsewhere: a little slack
+// over the ping interval so normal jitter doesn't flip this on and off.
+const LISTENING_NOW_WINDOW_MS = 60_000
+
+/** Admin "Слушатели" list: everyone who has ever logged in, name (from
+    Telegram, refreshed on each login), total listening time and whether
+    they're listening right now. Sorted with "listening now" first, then
+    by total time — so who's actually online surfaces immediately instead
+    of being buried under whoever has the most lifetime hours. */
 async function handleAdminListeners(env: Env): Promise<Response> {
+  const cutoff = new Date(Date.now() - LISTENING_NOW_WINDOW_MS).toISOString()
   const { results } = await env.DB.prepare(
     `select u.telegram_user_id, u.first_name, u.last_name, u.username, u.last_seen_at,
-            coalesce(s.total_seconds, 0) as total_seconds,
+            coalesce(s.total_seconds, 0) as total_seconds, s.last_heartbeat_at,
             (select 1 from admins a where a.telegram_user_id = u.telegram_user_id) as is_admin
      from users u
      left join listen_stats s on s.telegram_user_id = u.telegram_user_id
-     order by total_seconds desc, u.last_seen_at desc`,
-  ).all<ListenerRow>()
+     order by
+       case when s.last_heartbeat_at is not null and s.last_heartbeat_at >= ? then 0 else 1 end,
+       total_seconds desc,
+       u.last_seen_at desc`,
+  )
+    .bind(cutoff)
+    .all<ListenerRow>()
 
   return json({
     listeners: results.map((r) => ({
@@ -510,6 +525,7 @@ async function handleAdminListeners(env: Env): Promise<Response> {
       lastSeenAt: r.last_seen_at,
       totalSeconds: r.total_seconds ?? 0,
       isAdmin: Boolean(r.is_admin),
+      listeningNow: Boolean(r.last_heartbeat_at && r.last_heartbeat_at >= cutoff),
     })),
   })
 }

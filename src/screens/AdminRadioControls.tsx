@@ -11,6 +11,10 @@ const STORAGE_WARNING_THRESHOLD = 0.85
 
 const STATUS_POLL_MS = 5000
 const ONLINE_POLL_MS = 10000
+// "Слушают сейчас" is only as fresh as this — matches the server's own
+// LISTENING_NOW_WINDOW_MS (1 min) closely enough that it doesn't sit
+// stale on screen while the admin is actually watching this tab.
+const LISTENERS_POLL_MS = 20_000
 // A single failed poll is routine (a request can just drop) — only flag
 // the server as actually down after several polls in a row fail, so a
 // one-off network blip doesn't flash a false alarm at the admin.
@@ -52,7 +56,13 @@ export function AdminRadioControls() {
       if (s) setAppOpenCount(s.online)
     })
     fetchShowName().then(setShowNameInput)
-    fetchListeners().then(setListeners)
+
+    async function pollListeners() {
+      const data = await fetchListeners()
+      setListeners(data)
+    }
+    pollListeners()
+    const listenersTimer = setInterval(pollListeners, LISTENERS_POLL_MS)
 
     async function pollStream() {
       const result = await fetchIcecastStatus()
@@ -82,6 +92,7 @@ export function AdminRadioControls() {
     return () => {
       clearInterval(streamTimer)
       clearInterval(onlineTimer)
+      clearInterval(listenersTimer)
     }
   }, [])
 
@@ -274,6 +285,10 @@ export function AdminRadioControls() {
         <ul className="admin-listeners__box">
           {(listeners ?? []).map((l) => (
             <li key={l.telegramUserId} className="admin-listeners__row">
+              {/* A live dot rather than re-sorting client-side — the list
+                  already arrives sorted "listening now" first from the
+                  server, this just makes that visible at a glance. */}
+              {l.listeningNow && <span className="admin-listeners__live-dot" title="Слушает сейчас" />}
               <div className="admin-listeners__identity">
                 <span className="admin-listeners__name">
                   {/* Name if Telegram gave one; otherwise the username is
@@ -296,9 +311,9 @@ export function AdminRadioControls() {
                 {copiedId === l.telegramUserId ? (
                   '✓'
                 ) : (
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="9" y="9" width="12" height="12" rx="1" />
-                    <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="8" y="8" width="14" height="14" rx="3" ry="3" />
+                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
                   </svg>
                 )}
               </button>
