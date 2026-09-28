@@ -41,6 +41,9 @@ export function AdminRadioControls() {
   const [notifyResult, setNotifyResult] = useState<string | null>(null)
   const [notifyError, setNotifyError] = useState<string | null>(null)
   const [listeners, setListeners] = useState<Listener[] | null>(null)
+  // Briefly flags which row's copy button was just pressed, to show a
+  // checkmark — the only feedback a clipboard write gets otherwise.
+  const [copiedId, setCopiedId] = useState<number | null>(null)
 
   useEffect(() => {
     // Slow-changing numbers (peaks, storage, histogram): one fetch per visit.
@@ -129,6 +132,22 @@ export function AdminRadioControls() {
       setNotifyError(`${(err as Error).message} (успело уйти: ${sent})`)
     } finally {
       setNotifying(false)
+    }
+  }
+
+  // Copies whatever identifier is actually useful for finding this person
+  // in Telegram — @username if they have one (searchable, tappable
+  // elsewhere), otherwise the raw numeric id as the only thing left to go
+  // on. Never the display name alone: two different people can share one.
+  async function handleCopyListener(l: Listener) {
+    const value = l.username ? `@${l.username}` : String(l.telegramUserId)
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopiedId(l.telegramUserId)
+      setTimeout(() => setCopiedId((id) => (id === l.telegramUserId ? null : id)), 1500)
+    } catch {
+      // Clipboard access can fail (old browser, denied permission) — no
+      // real fallback beyond just not showing the "copied" confirmation.
     }
   }
 
@@ -257,11 +276,32 @@ export function AdminRadioControls() {
             <li key={l.telegramUserId} className="admin-listeners__row">
               <div className="admin-listeners__identity">
                 <span className="admin-listeners__name">
-                  {l.name ?? `id ${l.telegramUserId}`}
+                  {/* Name if Telegram gave one; otherwise the username is
+                      already a real identifier, only falling back to the
+                      bare id when neither exists. */}
+                  {l.name ?? (l.username ? `@${l.username}` : `id ${l.telegramUserId}`)}
                   {l.isAdmin && <span className="admin-listeners__badge">админ</span>}
                 </span>
-                {l.username && <span className="admin-listeners__username">@{l.username}</span>}
+                {/* Shown on its own line only when there's also a name
+                    above it — otherwise it's already the line above. */}
+                {l.name && l.username && <span className="admin-listeners__username">@{l.username}</span>}
               </div>
+              <button
+                type="button"
+                className="admin-listeners__copy-button"
+                onClick={() => handleCopyListener(l)}
+                aria-label="Скопировать"
+                title={l.username ? `@${l.username}` : String(l.telegramUserId)}
+              >
+                {copiedId === l.telegramUserId ? (
+                  '✓'
+                ) : (
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="12" height="12" rx="1" />
+                    <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+                  </svg>
+                )}
+              </button>
               <span className="admin-listeners__hours">{formatDuration(l.totalSeconds)}</span>
             </li>
           ))}
