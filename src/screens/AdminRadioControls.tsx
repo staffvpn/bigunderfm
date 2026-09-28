@@ -11,10 +11,18 @@ const STORAGE_WARNING_THRESHOLD = 0.85
 
 const STATUS_POLL_MS = 5000
 const ONLINE_POLL_MS = 10000
-// "Слушают сейчас" is only as fresh as this — matches the server's own
-// LISTENING_NOW_WINDOW_MS (1 min) closely enough that it doesn't sit
-// stale on screen while the admin is actually watching this tab.
-const LISTENERS_POLL_MS = 20_000
+// Same cadence as the other live tiles (ONLINE_POLL_MS) rather than its
+// own slower one — the admin watching this tab expects it to feel as
+// live as everything else on the page, not noticeably behind it.
+const LISTENERS_POLL_MS = 10_000
+// A Telegram name has no length limit and no guaranteed spaces — a long
+// one-word name (seen live: 64 repeated characters) still has to fit one
+// line without ballooning the row, so it's clipped rather than wrapped.
+const MAX_NAME_LENGTH = 28
+
+function truncateName(name: string): string {
+  return name.length > MAX_NAME_LENGTH ? `${name.slice(0, MAX_NAME_LENGTH)}…` : name
+}
 // A single failed poll is routine (a request can just drop) — only flag
 // the server as actually down after several polls in a row fail, so a
 // one-off network blip doesn't flash a false alarm at the admin.
@@ -290,11 +298,12 @@ export function AdminRadioControls() {
                   server, this just makes that visible at a glance. */}
               {l.listeningNow && <span className="admin-listeners__live-dot" title="Слушает сейчас" />}
               <div className="admin-listeners__identity">
-                <span className="admin-listeners__name">
+                <span className="admin-listeners__name" title={l.name ?? undefined}>
                   {/* Name if Telegram gave one; otherwise the username is
                       already a real identifier, only falling back to the
-                      bare id when neither exists. */}
-                  {l.name ?? (l.username ? `@${l.username}` : `id ${l.telegramUserId}`)}
+                      bare id when neither exists. The full name is still
+                      on hover (title) — only the on-screen text is capped. */}
+                  {l.name ? truncateName(l.name) : (l.username ? `@${l.username}` : `id ${l.telegramUserId}`)}
                   {l.isAdmin && <span className="admin-listeners__badge">админ</span>}
                 </span>
                 {/* Shown on its own line only when there's also a name
