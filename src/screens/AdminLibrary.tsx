@@ -22,6 +22,7 @@ export function AdminLibrary() {
   // Local-only visual order while a drag is in progress — the server only
   // hears about it once via commitOrder() on release, not on every move.
   const [dragOrderIds, setDragOrderIds] = useState<string[] | null>(null)
+  const [query, setQuery] = useState('')
   const draggingIdRef = useRef<string | null>(null)
   const listRef = useRef<HTMLUListElement>(null)
   // Last known pointer position during a drag, kept fresh even when the
@@ -258,9 +259,15 @@ export function AdminLibrary() {
     if (finalOrder) commitOrder(finalOrder)
   }
 
-  const visibleEntries = dragOrderIds
-    ? dragOrderIds.map((id) => entries.find((e) => e.track.id === id)).filter((e): e is PlaylistEntry => !!e)
-    : entries
+  const searchTerm = query.trim().toLowerCase()
+  const searching = searchTerm !== ''
+  const visibleEntries = searching
+    ? entries.filter((e) =>
+        `${e.track.artist} ${e.track.title}`.toLowerCase().includes(searchTerm),
+      )
+    : dragOrderIds
+      ? dragOrderIds.map((id) => entries.find((e) => e.track.id === id)).filter((e): e is PlaylistEntry => !!e)
+      : entries
 
   // "В ротации" reflects what's actually broadcasting right now (enabled
   // tracks only) — computed from data already on hand rather than a
@@ -320,6 +327,19 @@ export function AdminLibrary() {
         ))}
       </ul>
 
+      <input
+        className="admin-library__edit-input"
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Поиск по названию или исполнителю"
+      />
+      {searching && (
+        <p className="admin-library__rotation-summary">
+          Найдено: {visibleEntries.length}. Порядковый номер — место в плейлисте.
+        </p>
+      )}
+
       <ul className="admin-library__list" ref={listRef}>
         {visibleEntries.map((entry) => (
           <li
@@ -356,15 +376,17 @@ export function AdminLibrary() {
             ) : (
               <>
                 <div className="admin-library__row">
-                  <span
-                    className="drag-handle"
-                    onPointerDown={(e) => handleHandlePointerDown(e, entry.track.id)}
-                    onPointerMove={handleHandlePointerMove}
-                    onPointerUp={handleHandlePointerUp}
-                    onPointerCancel={handleHandlePointerUp}
-                  >
-                    ≡
-                  </span>
+                  {!searching && (
+                    <span
+                      className="drag-handle"
+                      onPointerDown={(e) => handleHandlePointerDown(e, entry.track.id)}
+                      onPointerMove={handleHandlePointerMove}
+                      onPointerUp={handleHandlePointerUp}
+                      onPointerCancel={handleHandlePointerUp}
+                    >
+                      ≡
+                    </span>
+                  )}
                   <span className="admin-library__label">
                     {entry.position}. {entry.track.artist} — {entry.track.title}
                   </span>
