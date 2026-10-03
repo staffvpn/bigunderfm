@@ -15,6 +15,8 @@ const SAMPLE_RETENTION_DAYS = 90
 // Telegram allows ~30 msg/s; also keeps one request under the Free plan's subrequest cap.
 const NOTIFY_CHUNK = 40
 const NOTIFY_MAX_LENGTH = 1000
+const NOTIFY_LIFETIME_MS = 3 * 60 * 60 * 1000
+const DELETE_BATCH = 200
 
 function isFile(v: unknown): v is File {
   return typeof v === 'object' && v !== null && 'arrayBuffer' in v && 'name' in v
@@ -609,12 +611,23 @@ async function handleNotify(req: Request, env: Env): Promise<Response> {
 
   let sent = 0
   let failed = 0
+  const deleteAt = new Date(Date.now() + NOTIFY_LIFETIME_MS).toISOString()
+  const tracked: D1PreparedStatement[] = []
   for (const { id } of results) {
     const res = await callTelegram(env, 'sendMessage', { chat_id: id, text })
-    if (res?.ok) sent++
-    else failed++
+    if (res?.ok) {
+      sent++
+      tracked.push(
+        env.DB.prepare('insert into sent_notifications (chat_id, message_id, delete_at) values (?, ?, ?)').bind(
+          id,
+          res.result.message_id,
+          deleteAt,
+        ),
+      )
+    } else failed++
     await sleep(40)
   }
+  if (tracked.length > 0) await env.DB.batch(tracked)
 
   const next = offset + results.length < total && results.length > 0 ? offset + results.length : null
   if (next === null) {
@@ -761,6 +774,27 @@ async function sendDueReminders(env: Env): Promise<void> {
   }
 }
 
+async function deleteExpiredNotifications(env: Env): Promise<void> {
+  const { results } = await env.DB.prepare(
+    'select chat_id, message_id from sent_notifications where delete_at <= ? limit ?',
+  )
+    .bind(nowIso(), DELETE_BATCH)
+    .all<{ chat_id: number; message_id: number }>()
+
+  const done: D1PreparedStatement[] = []
+  for (const row of results) {
+    const res = await callTelegram(env, 'deleteMessage', { chat_id: row.chat_id, message_id: row.message_id })
+    // A rate-limit or network failure keeps the row for the next minute;
+    // anything else (already deleted, blocked, too old to delete) is final.
+    const transient = !res || res.error_code === 429
+    if (!transient) {
+      done.push(env.DB.prepare('delete from sent_notifications where chat_id = ? and message_id = ?').bind(row.chat_id, row.message_id))
+    }
+    await sleep(40)
+  }
+  if (done.length > 0) await env.DB.batch(done)
+}
+
 async function sampleListeners(env: Env): Promise<void> {
   let listeners: number
   try {
@@ -793,5 +827,6 @@ export default {
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(sampleListeners(env))
     ctx.waitUntil(sendDueReminders(env))
+    ctx.waitUntil(deleteExpiredNotifications(env))
   },
 }
