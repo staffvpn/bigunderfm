@@ -8,7 +8,7 @@ export interface EventItem {
   imageUrl: string | null
 }
 
-/** Listeners' feed: only events that haven't happened yet, soonest first. */
+/** Listeners' feed: every event, oldest first (past ones are shown dimmed). */
 export async function fetchEvents(): Promise<EventItem[]> {
   try {
     const data = await api<{ events: EventItem[] }>('/api/events')

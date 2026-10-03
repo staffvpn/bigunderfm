@@ -264,11 +264,9 @@ function toEventEntry(env: Env, r: EventRow) {
   }
 }
 
-/** Listeners' feed: only events that haven't happened yet, soonest first. */
+/** Listeners' feed: every event, oldest first — same list the admin sees. */
 async function handleListEvents(env: Env): Promise<Response> {
-  const { results } = await env.DB.prepare('select * from events where event_at >= ? order by event_at asc')
-    .bind(nowIso())
-    .all<EventRow>()
+  const { results } = await env.DB.prepare('select * from events order by event_at asc').all<EventRow>()
   return json({ events: results.map((r) => toEventEntry(env, r)) })
 }
 

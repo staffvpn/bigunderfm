@@ -26,6 +26,7 @@ export function ScheduleScreen() {
   const [events, setEvents] = useState<EventItem[] | null>(null)
   const [remindState, setRemindState] = useState<Record<string, RemindState>>({})
   const [remindNote, setRemindNote] = useState<Record<string, string>>({})
+  const now = Date.now()
 
   useEffect(() => {
     fetchEvents().then(setEvents)
@@ -68,14 +69,15 @@ export function ScheduleScreen() {
           <ul className="schedule-screen__list">
             {events.map((event) => {
               const state = remindState[event.id] ?? 'idle'
+              const isPast = new Date(event.eventAt).getTime() < now
               return (
-                <li key={event.id} className="schedule-screen__item">
+                <li key={event.id} className={`schedule-screen__item${isPast ? ' is-past' : ''}`}>
                   <div className="schedule-screen__item-main">
                     {event.imageUrl && (
                       <img src={event.imageUrl} alt="" className="schedule-screen__item-image" />
                     )}
                     <div className="schedule-screen__item-body">
-                      <span className="schedule-screen__item-datetime">{formatEventDateTime(event.eventAt)}</span>
+                      <span className="schedule-screen__item-datetime">{formatEventDateTime(event.eventAt)}{isPast ? ' · ПРОШЛО' : ''}</span>
                       <span className="schedule-screen__item-title">{event.title}</span>
                       {event.description && (
                         <span className="schedule-screen__item-description">{event.description}</span>
@@ -85,7 +87,7 @@ export function ScheduleScreen() {
                   <button
                     className="schedule-screen__remind-button"
                     onClick={() => handleRemind(event.id)}
-                    disabled={state === 'sending' || state === 'done'}
+                    disabled={isPast || state === 'sending' || state === 'done'}
                   >
                     {remindLabel(state)}
                   </button>

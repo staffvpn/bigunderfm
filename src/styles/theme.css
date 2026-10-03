@@ -1190,6 +1190,10 @@ button {
   white-space: pre-wrap;
 }
 
+.schedule-screen__item.is-past {
+  opacity: 0.55;
+}
+
 .schedule-screen__remind-button {
   align-self: flex-start;
   background: transparent;

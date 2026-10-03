@@ -19,7 +19,7 @@ export function EventTicker() {
     async function check() {
       const events = await fetchEvents()
       if (cancelled) return
-      const next = events[0]
+      const next = events.find((e) => new Date(e.eventAt).getTime() >= Date.now())
       const soon = next && new Date(next.eventAt).getTime() - Date.now() <= SOON_WINDOW_MS
       setText(soon ? `СКОРО: ${next.title} — ${formatEventDateTime(next.eventAt)}` : null)
     }
