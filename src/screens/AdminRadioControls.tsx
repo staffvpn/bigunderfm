@@ -10,11 +10,7 @@ import { formatDuration, formatElapsedSince, formatBytes } from '../lib/format'
 const STORAGE_WARNING_THRESHOLD = 0.85
 
 const STATUS_POLL_MS = 5000
-const ONLINE_POLL_MS = 10000
-// Same cadence as the other live tiles (ONLINE_POLL_MS) rather than its
-// own slower one — the admin watching this tab expects it to feel as
-// live as everything else on the page, not noticeably behind it.
-const LISTENERS_POLL_MS = 10_000
+const LISTENERS_POLL_MS = 60_000
 // A Telegram name has no length limit and no guaranteed spaces — a long
 // one-word name (seen live: 64 repeated characters) still has to fit one
 // line without ballooning the row, so it's clipped rather than wrapped.
@@ -37,11 +33,6 @@ export function AdminRadioControls() {
   const [serverDown, setServerDown] = useState(false)
   const [skipping, setSkipping] = useState(false)
   const [skipError, setSkipError] = useState<string | null>(null)
-  // "Открыли приложение" — how many clients have the app open right now
-  // (backend presence counter), regardless of tab or whether they pressed
-  // play. Distinct from status.listeners, which is Icecast's own count of
-  // clients actually receiving audio.
-  const [appOpenCount, setAppOpenCount] = useState<number | null>(null)
   const failureStreakRef = useRef(0)
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [showNameInput, setShowNameInput] = useState('')
@@ -58,11 +49,8 @@ export function AdminRadioControls() {
   const [copiedId, setCopiedId] = useState<number | null>(null)
 
   useEffect(() => {
-    // Slow-changing numbers (peaks, storage, histogram): one fetch per visit.
-    fetchAdminStats().then((s) => {
-      setStats(s)
-      if (s) setAppOpenCount(s.online)
-    })
+    // Slow-changing numbers (peaks, storage): one fetch per visit.
+    fetchAdminStats().then(setStats)
     fetchShowName().then(setShowNameInput)
 
     async function pollListeners() {
@@ -85,21 +73,10 @@ export function AdminRadioControls() {
         }
       }
     }
-    async function pollOnline() {
-      try {
-        const data = await api<{ online: number }>('/api/admin/online')
-        setAppOpenCount(data.online)
-      } catch {
-        // keep the last known value
-      }
-    }
     pollStream()
-    pollOnline()
     const streamTimer = setInterval(pollStream, STATUS_POLL_MS)
-    const onlineTimer = setInterval(pollOnline, ONLINE_POLL_MS)
     return () => {
       clearInterval(streamTimer)
-      clearInterval(onlineTimer)
       clearInterval(listenersTimer)
     }
   }, [])
@@ -184,9 +161,6 @@ export function AdminRadioControls() {
 
   const storagePercent = stats ? stats.storageUsedBytes / STORAGE_LIMIT_BYTES : null
   const storageLow = storagePercent !== null && storagePercent >= STORAGE_WARNING_THRESHOLD
-  const hourlyOpens = stats?.hourlyOpens ?? null
-  const maxHourlyOpens = hourlyOpens ? Math.max(1, ...hourlyOpens.map((h) => h.count)) : 1
-  const totalOpens = stats?.totalOpens ?? 0
 
   return (
     <div className="admin-radio-controls">
@@ -223,10 +197,6 @@ export function AdminRadioControls() {
           <span className="admin-dashboard__tile-label">Слушают поток</span>
         </div>
         <div className="admin-dashboard__tile">
-          <span className="admin-dashboard__tile-value">{appOpenCount ?? '—'}</span>
-          <span className="admin-dashboard__tile-label">Открыли приложение</span>
-        </div>
-        <div className="admin-dashboard__tile">
           <span className="admin-dashboard__tile-value">{stats?.peaks.day ?? '—'}</span>
           <span className="admin-dashboard__tile-label">Пик за день</span>
         </div>
@@ -256,33 +226,6 @@ export function AdminRadioControls() {
           <span className="admin-dashboard__tile-value">{status?.bitrateKbps ? `${status.bitrateKbps} kbps` : '—'}</span>
           <span className="admin-dashboard__tile-label">Битрейт</span>
         </div>
-      </div>
-
-      <div className="admin-dashboard__chart">
-        <div className="admin-dashboard__chart-header">
-          <span className="admin-dashboard__chart-label">КОГДА ОТКРЫВАЮТ ПРИЛОЖЕНИЕ</span>
-          <span className="admin-dashboard__chart-total">{totalOpens} заходов всего</span>
-        </div>
-        <div className="admin-dashboard__chart-bars">
-          {(hourlyOpens ?? []).map(({ hour, count }) => (
-            <div key={hour} className="admin-dashboard__chart-bar-wrap" title={`${hour}:00 — ${count}`}>
-              <div
-                className="admin-dashboard__chart-bar"
-                style={{ height: `${(count / maxHourlyOpens) * 100}%` }}
-              />
-            </div>
-          ))}
-        </div>
-        <div className="admin-dashboard__chart-ticks">
-          {(hourlyOpens ?? []).map(({ hour }) => (
-            <span key={hour} className="admin-dashboard__chart-tick">
-              {hour % 3 === 0 ? hour : ''}
-            </span>
-          ))}
-        </div>
-        <p className="admin-dashboard__chart-caption">
-          По часам суток (твоё местное время), за всё время работы приложения.
-        </p>
       </div>
 
       <div className="admin-dashboard__chart">

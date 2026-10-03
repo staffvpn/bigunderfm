@@ -532,26 +532,14 @@ async function handleAdminListeners(env: Env): Promise<Response> {
 
 // ---------- admin: stats / actions ----------
 
-async function onlineCount(env: Env): Promise<number> {
-  const stub = env.PRESENCE.get(env.PRESENCE.idFromName('room'))
-  const res = await stub.fetch('https://presence/count')
-  return ((await res.json()) as { count: number }).count
-}
-
-async function handleStats(req: Request, env: Env): Promise<Response> {
-  const tz = Math.max(-840, Math.min(840, Math.trunc(Number(new URL(req.url).searchParams.get('tz')) || 0)))
-  const modifier = `${tz >= 0 ? '+' : '-'}${Math.abs(tz)} minutes`
+async function handleStats(env: Env): Promise<Response> {
   const since = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString()
 
   const peakSql = 'select coalesce(max(listeners), 0) as p from listener_samples where sampled_at >= ?'
-  const [day, week, month, hours, total, storage, playlist] = await env.DB.batch([
+  const [day, week, month, storage, playlist] = await env.DB.batch([
     env.DB.prepare(peakSql).bind(since(1)),
     env.DB.prepare(peakSql).bind(since(7)),
     env.DB.prepare(peakSql).bind(since(30)),
-    env.DB.prepare(
-      "select cast(strftime('%H', created_at, ?) as integer) as h, count(*) as c from login_events group by h",
-    ).bind(modifier),
-    env.DB.prepare('select count(*) as c from login_events'),
     env.DB.prepare('select coalesce(sum(file_size_bytes), 0) as b from tracks'),
     env.DB.prepare(
       'select count(*) as n, coalesce(sum(t.duration_seconds), 0) as d from playlist_items p join tracks t on t.id = p.track_id where t.is_enabled = 1',
@@ -559,17 +547,11 @@ async function handleStats(req: Request, env: Env): Promise<Response> {
   ])
   const first = (r: D1Result, key: string): number => Number((r.results[0] as Record<string, unknown> | undefined)?.[key] ?? 0)
 
-  const byHour = new Array<number>(24).fill(0)
-  for (const row of hours.results as { h: number; c: number }[]) byHour[row.h] = row.c
-
   return json({
     peaks: { day: first(day, 'p'), week: first(week, 'p'), month: first(month, 'p') },
-    hourlyOpens: byHour.map((count, hour) => ({ hour, count })),
-    totalOpens: first(total, 'c'),
     storageUsedBytes: first(storage, 'b'),
     trackCount: first(playlist, 'n'),
     rotationSeconds: first(playlist, 'd'),
-    online: await onlineCount(env).catch(() => 0),
   })
 }
 
@@ -719,9 +701,8 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (m === 'POST' && path === '/api/admin/tracks') return handleUpload(req, env)
     if (m === 'PUT' && path === '/api/admin/order') return handleOrder(req, env)
     if (m === 'PUT' && path === '/api/admin/show-name') return handleSetShowName(req, env)
-    if (m === 'GET' && path === '/api/admin/stats') return handleStats(req, env)
+    if (m === 'GET' && path === '/api/admin/stats') return handleStats(env)
     // Cheap (no database): the dashboard polls this every few seconds.
-    if (m === 'GET' && path === '/api/admin/online') return json({ online: await onlineCount(env).catch(() => 0) })
     if (m === 'POST' && path === '/api/admin/skip') return handleSkip(env)
     if (m === 'POST' && path === '/api/admin/notify') return handleNotify(req, env)
     if (m === 'GET' && path === '/api/admin/events') return handleAdminListEvents(env)
