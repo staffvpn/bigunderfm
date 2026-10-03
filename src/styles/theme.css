@@ -1190,8 +1190,29 @@ button {
   white-space: pre-wrap;
 }
 
-.schedule-screen__item.is-past {
-  opacity: 0.55;
+.schedule-screen__tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.schedule-screen__tab {
+  flex: 1;
+  background: transparent;
+  color: var(--color-muted);
+  border: 1px solid var(--color-surface-2);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.schedule-screen__tab.is-active {
+  color: var(--color-accent-ink);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .schedule-screen__remind-button {

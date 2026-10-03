@@ -26,11 +26,16 @@ export function ScheduleScreen() {
   const [events, setEvents] = useState<EventItem[] | null>(null)
   const [remindState, setRemindState] = useState<Record<string, RemindState>>({})
   const [remindNote, setRemindNote] = useState<Record<string, string>>({})
+  const [view, setView] = useState<'upcoming' | 'past'>('upcoming')
   const now = Date.now()
 
   useEffect(() => {
     fetchEvents().then(setEvents)
   }, [])
+
+  const upcoming = events?.filter((e) => new Date(e.eventAt).getTime() >= now) ?? []
+  const past = (events?.filter((e) => new Date(e.eventAt).getTime() < now) ?? []).reverse()
+  const shown = view === 'upcoming' ? upcoming : past
 
   async function handleRemind(eventId: string) {
     setRemindState((s) => ({ ...s, [eventId]: 'sending' }))
@@ -63,15 +68,38 @@ export function ScheduleScreen() {
 
         <h2>SCHEDULE</h2>
 
-        {events === null ? null : events.length === 0 ? (
-          <p className="schedule-screen__empty">Пока нет анонсированных событий — загляните позже.</p>
+        <div className="schedule-screen__tabs" role="tablist">
+          <button
+            role="tab"
+            aria-selected={view === 'upcoming'}
+            className={`schedule-screen__tab${view === 'upcoming' ? ' is-active' : ''}`}
+            onClick={() => setView('upcoming')}
+          >
+            ПРЕДСТОЯЩИЕ
+          </button>
+          <button
+            role="tab"
+            aria-selected={view === 'past'}
+            className={`schedule-screen__tab${view === 'past' ? ' is-active' : ''}`}
+            onClick={() => setView('past')}
+          >
+            ПРОШЕДШИЕ
+          </button>
+        </div>
+
+        {events === null ? null : shown.length === 0 ? (
+          <p className="schedule-screen__empty">
+            {view === 'upcoming'
+              ? 'Пока нет анонсированных событий — загляните позже.'
+              : 'Прошедших событий пока нет.'}
+          </p>
         ) : (
           <ul className="schedule-screen__list">
-            {events.map((event) => {
+            {shown.map((event) => {
               const state = remindState[event.id] ?? 'idle'
-              const isPast = new Date(event.eventAt).getTime() < now
+              const isPast = view === 'past'
               return (
-                <li key={event.id} className={`schedule-screen__item${isPast ? ' is-past' : ''}`}>
+                <li key={event.id} className="schedule-screen__item">
                   <div className="schedule-screen__item-main">
                     {event.imageUrl && (
                       <img src={event.imageUrl} alt="" className="schedule-screen__item-image" />
