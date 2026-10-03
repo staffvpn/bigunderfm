@@ -3,22 +3,12 @@ import { api } from '../lib/api'
 import { fetchIcecastStatus, type IcecastStatus } from '../lib/radioServer'
 import { fetchAdminStats, STORAGE_LIMIT_BYTES, type AdminStats } from '../lib/adminStats'
 import { fetchShowName, updateShowName } from '../lib/showName'
-import { fetchListeners, type Listener } from '../lib/listeners'
 import { formatDuration, formatElapsedSince, formatBytes } from '../lib/format'
 
 // Above this fraction of the free R2 allowance, flag it.
 const STORAGE_WARNING_THRESHOLD = 0.85
 
 const STATUS_POLL_MS = 5000
-const LISTENERS_POLL_MS = 60_000
-// A Telegram name has no length limit and no guaranteed spaces — a long
-// one-word name (seen live: 64 repeated characters) still has to fit one
-// line without ballooning the row, so it's clipped rather than wrapped.
-const MAX_NAME_LENGTH = 28
-
-function truncateName(name: string): string {
-  return name.length > MAX_NAME_LENGTH ? `${name.slice(0, MAX_NAME_LENGTH)}…` : name
-}
 // A single failed poll is routine (a request can just drop) — only flag
 // the server as actually down after several polls in a row fail, so a
 // one-off network blip doesn't flash a false alarm at the admin.
@@ -43,22 +33,11 @@ export function AdminRadioControls() {
   const [notifying, setNotifying] = useState(false)
   const [notifyResult, setNotifyResult] = useState<string | null>(null)
   const [notifyError, setNotifyError] = useState<string | null>(null)
-  const [listeners, setListeners] = useState<Listener[] | null>(null)
-  // Briefly flags which row's copy button was just pressed, to show a
-  // checkmark — the only feedback a clipboard write gets otherwise.
-  const [copiedId, setCopiedId] = useState<number | null>(null)
 
   useEffect(() => {
     // Slow-changing numbers (peaks, storage): one fetch per visit.
     fetchAdminStats().then(setStats)
     fetchShowName().then(setShowNameInput)
-
-    async function pollListeners() {
-      const data = await fetchListeners()
-      setListeners(data)
-    }
-    pollListeners()
-    const listenersTimer = setInterval(pollListeners, LISTENERS_POLL_MS)
 
     async function pollStream() {
       const result = await fetchIcecastStatus()
@@ -77,7 +56,6 @@ export function AdminRadioControls() {
     const streamTimer = setInterval(pollStream, STATUS_POLL_MS)
     return () => {
       clearInterval(streamTimer)
-      clearInterval(listenersTimer)
     }
   }, [])
 
@@ -128,22 +106,6 @@ export function AdminRadioControls() {
       setNotifyError(`${(err as Error).message} (успело уйти: ${sent})`)
     } finally {
       setNotifying(false)
-    }
-  }
-
-  // Copies whatever identifier is actually useful for finding this person
-  // in Telegram — @username if they have one (searchable, tappable
-  // elsewhere), otherwise the raw numeric id as the only thing left to go
-  // on. Never the display name alone: two different people can share one.
-  async function handleCopyListener(l: Listener) {
-    const value = l.username ? `@${l.username}` : String(l.telegramUserId)
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopiedId(l.telegramUserId)
-      setTimeout(() => setCopiedId((id) => (id === l.telegramUserId ? null : id)), 1500)
-    } catch {
-      // Clipboard access can fail (old browser, denied permission) — no
-      // real fallback beyond just not showing the "copied" confirmation.
     }
   }
 
@@ -226,58 +188,6 @@ export function AdminRadioControls() {
           <span className="admin-dashboard__tile-value">{status?.bitrateKbps ? `${status.bitrateKbps} kbps` : '—'}</span>
           <span className="admin-dashboard__tile-label">Битрейт</span>
         </div>
-      </div>
-
-      <div className="admin-dashboard__chart">
-        <div className="admin-dashboard__chart-header">
-          <span className="admin-dashboard__chart-label">СЛУШАТЕЛИ</span>
-          <span className="admin-dashboard__chart-total">{listeners?.length ?? 0} всего</span>
-        </div>
-        <ul className="admin-listeners__box">
-          {(listeners ?? []).map((l) => (
-            <li key={l.telegramUserId} className="admin-listeners__row">
-              {/* A live dot rather than re-sorting client-side — the list
-                  already arrives sorted "listening now" first from the
-                  server, this just makes that visible at a glance. */}
-              {l.listeningNow && <span className="admin-listeners__live-dot" title="Слушает сейчас" />}
-              <div className="admin-listeners__identity">
-                <span className="admin-listeners__name" title={l.name ?? undefined}>
-                  {/* Name if Telegram gave one; otherwise the username is
-                      already a real identifier, only falling back to the
-                      bare id when neither exists. The full name is still
-                      on hover (title) — only the on-screen text is capped. */}
-                  {l.name ? truncateName(l.name) : (l.username ? `@${l.username}` : `id ${l.telegramUserId}`)}
-                  {l.isAdmin && <span className="admin-listeners__badge">админ</span>}
-                </span>
-                {/* Shown on its own line only when there's also a name
-                    above it — otherwise it's already the line above. */}
-                {l.name && l.username && <span className="admin-listeners__username">@{l.username}</span>}
-              </div>
-              <button
-                type="button"
-                className="admin-listeners__copy-button"
-                onClick={() => handleCopyListener(l)}
-                aria-label="Скопировать"
-                title={l.username ? `@${l.username}` : String(l.telegramUserId)}
-              >
-                {copiedId === l.telegramUserId ? (
-                  <span className="admin-listeners__copy-check">✓</span>
-                ) : (
-                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="8" y="8" width="14" height="14" rx="4" ry="4" />
-                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-                  </svg>
-                )}
-              </button>
-              <span className="admin-listeners__hours">{formatDuration(l.totalSeconds)}</span>
-            </li>
-          ))}
-        </ul>
-        <p className="admin-dashboard__chart-caption">
-          {listeners !== null && listeners.length === 0
-            ? 'Пока никто не заходил.'
-            : 'Часы — реальное время со звуком, не просто открытое приложение. Отсортировано по убыванию.'}
-        </p>
       </div>
 
       <div className="admin-dashboard__show-name">
