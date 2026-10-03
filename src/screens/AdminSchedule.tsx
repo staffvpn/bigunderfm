@@ -65,6 +65,7 @@ export function AdminSchedule() {
   const [editRemoveImage, setEditRemoveImage] = useState(false)
   const [savingEdit, setSavingEdit] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
+  const [view, setView] = useState<'upcoming' | 'past'>('upcoming')
 
   async function reload() {
     setEvents(await fetchAdminEvents())
@@ -160,6 +161,9 @@ export function AdminSchedule() {
   }
 
   const now = Date.now()
+  const upcoming = events.filter((e) => new Date(e.eventAt).getTime() >= now)
+  const past = events.filter((e) => new Date(e.eventAt).getTime() < now).reverse()
+  const shown = view === 'upcoming' ? upcoming : past
 
   return (
     <div className="admin-schedule">
@@ -217,9 +221,28 @@ export function AdminSchedule() {
         ))}
       </ul>
 
+      <div className="schedule-tabs" role="tablist">
+        <button
+          role="tab"
+          aria-selected={view === 'upcoming'}
+          className={`schedule-tab${view === 'upcoming' ? ' is-active' : ''}`}
+          onClick={() => setView('upcoming')}
+        >
+          ПРЕДСТОЯЩИЕ
+        </button>
+        <button
+          role="tab"
+          aria-selected={view === 'past'}
+          className={`schedule-tab${view === 'past' ? ' is-active' : ''}`}
+          onClick={() => setView('past')}
+        >
+          ПРОШЕДШИЕ
+        </button>
+      </div>
+
       <ul className="admin-schedule__list">
-        {events.map((event) => {
-          const isPast = new Date(event.eventAt).getTime() < now
+        {shown.map((event) => {
+          const isPast = view === 'past'
           return (
             <li key={event.id} className={`admin-schedule__item${isPast ? ' is-past' : ''}`}>
               {editingId === event.id ? (

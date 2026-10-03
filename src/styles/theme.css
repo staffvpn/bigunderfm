@@ -1190,13 +1190,13 @@ button {
   white-space: pre-wrap;
 }
 
-.schedule-screen__tabs {
+.schedule-tabs {
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
 }
 
-.schedule-screen__tab {
+.schedule-tab {
   flex: 1;
   background: transparent;
   color: var(--color-muted);
@@ -1209,7 +1209,7 @@ button {
   cursor: pointer;
 }
 
-.schedule-screen__tab.is-active {
+.schedule-tab.is-active {
   color: var(--color-accent-ink);
   background: var(--color-accent);
   border-color: var(--color-accent);

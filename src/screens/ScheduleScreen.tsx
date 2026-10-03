@@ -68,11 +68,11 @@ export function ScheduleScreen() {
 
         <h2>SCHEDULE</h2>
 
-        <div className="schedule-screen__tabs" role="tablist">
+        <div className="schedule-tabs" role="tablist">
           <button
             role="tab"
             aria-selected={view === 'upcoming'}
-            className={`schedule-screen__tab${view === 'upcoming' ? ' is-active' : ''}`}
+            className={`schedule-tab${view === 'upcoming' ? ' is-active' : ''}`}
             onClick={() => setView('upcoming')}
           >
             ПРЕДСТОЯЩИЕ
@@ -80,7 +80,7 @@ export function ScheduleScreen() {
           <button
             role="tab"
             aria-selected={view === 'past'}
-            className={`schedule-screen__tab${view === 'past' ? ' is-active' : ''}`}
+            className={`schedule-tab${view === 'past' ? ' is-active' : ''}`}
             onClick={() => setView('past')}
           >
             ПРОШЕДШИЕ
