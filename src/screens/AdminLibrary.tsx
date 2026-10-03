@@ -328,7 +328,7 @@ export function AdminLibrary() {
       </ul>
 
       <input
-        className="admin-library__edit-input"
+        className="admin-library__edit-input admin-library__search"
         type="search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}

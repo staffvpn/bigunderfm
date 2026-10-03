@@ -6,6 +6,7 @@ import { fetchShowName, DEFAULT_SHOW_NAME } from '../lib/showName'
 import { sendListenHeartbeat } from '../lib/listeners'
 import { OnAirBadge } from '../components/OnAirBadge'
 import { EventTicker } from '../components/EventTicker'
+import { NextShowCard } from '../components/NextShowCard'
 import cornerClip from '../assets/corner-clip.mp4'
 
 // Real, always-on broadcast — Icecast (distribution) + Liquidsoap
@@ -389,6 +390,8 @@ export function RadioScreen() {
           </div>
         </div>
 
+        <NextShowCard />
+
         <div className="radio-screen__meta-row">
           <div className="radio-screen__next-label">
             <span className="radio-screen__next-label-tag">Следующий трек:</span>
@@ -413,8 +416,6 @@ export function RadioScreen() {
             aria-hidden="true"
           />
         </div>
-
-        <div className="radio-screen__spacer" aria-hidden="true" />
 
         <button
           className={`radio-screen__play${isBuffering ? ' radio-screen__play--buffering' : ''}`}

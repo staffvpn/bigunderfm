@@ -62,21 +62,12 @@ button {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  /* flex-start + a dedicated flexible spacer (see .radio-screen__spacer,
-     placed right before the play button) rather than space-between —
-     space-between spread ALL of any leftover screen height evenly into
-     every gap, including the ones right around the cover image, which
-     read as too much air directly above/below the picture. This keeps
-     the tagline/cover/meta-row cluster tight and pushes any leftover
-     height to the one place it doesn't hurt the layout. */
+  /* flex-start: the cover takes the leftover height (up to a square) and
+     the play button is pushed to the bottom with margin-top: auto, so the
+     tagline/cover/card/meta-row cluster stays tight together. */
   justify-content: flex-start;
   gap: 10px;
   padding: 20px 20px 90px;
-}
-
-.radio-screen__spacer {
-  flex: 1;
-  min-height: 10px;
 }
 
 .radio-screen__header {
@@ -177,7 +168,9 @@ button {
   width: calc(100% + 40px);
   margin-left: -20px;
   margin-right: -20px;
-  aspect-ratio: 1 / 1;
+  flex: 1 1 0;
+  min-height: 140px;
+  max-height: 100vw;
   overflow: hidden;
   background-color: var(--color-surface);
   background-size: cover;
@@ -243,6 +236,57 @@ button {
 .radio-screen__cover-title--status {
   font-size: clamp(18px, 6vw, 26px);
   -webkit-line-clamp: 2;
+}
+
+.next-show {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  background: #000;
+  border: 1px solid var(--color-surface-2);
+  border-radius: 14px;
+}
+
+.next-show__image {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--color-surface-2);
+}
+
+.next-show__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.next-show__datetime {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--color-muted);
+}
+
+.next-show__title {
+  font-weight: 900;
+  font-size: 14px;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.next-show__description {
+  font-size: 12px;
+  opacity: 0.85;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 .radio-screen__meta-row {
@@ -324,6 +368,7 @@ button {
 
 .radio-screen__play {
   align-self: center;
+  margin-top: auto;
   width: 72px;
   height: 72px;
   display: flex;
@@ -605,6 +650,13 @@ button {
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
+}
+
+.admin-library__search {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 12px;
 }
 
 .admin-library__edit-input:focus {
