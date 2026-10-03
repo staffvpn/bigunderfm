@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchEvents, type EventItem } from '../lib/events'
 import { formatEventDateTime } from '../lib/format'
 
-const POLL_MS = 60_000
+const POLL_MS = 60 * 60_000
 
 /** Card under the Live cover showing the nearest upcoming show. Renders
     nothing when there are no upcoming events. */

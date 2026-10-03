@@ -5,7 +5,7 @@ import { formatEventDateTime } from '../lib/format'
 // How far ahead of an event's start the "coming soon" banner shows on the
 // Live screen. Change this one constant to adjust the window.
 const SOON_WINDOW_MS = 24 * 60 * 60 * 1000
-const POLL_MS = 60_000
+const POLL_MS = 60 * 60_000
 
 /** Scrolling banner at the top of the Live screen, shown only while the
     nearest upcoming event (see lib/events.ts — already sorted soonest
