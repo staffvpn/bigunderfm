@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { STREAM_HOST, STREAM_URL, decodeHtmlEntities } from '../lib/radioServer'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
-import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
+import { fetchPlaylist, fetchUpNextFilePath, type PlaylistEntry } from '../lib/tracks'
 import { fetchShowName, DEFAULT_SHOW_NAME } from '../lib/showName'
 import { OnAirBadge } from '../components/OnAirBadge'
 import { EventTicker } from '../components/EventTicker'
@@ -44,6 +44,7 @@ export function RadioScreen() {
   // only thing that actually knows where in the broadcast we are), it's
   // matched against nowPlaying below by title/artist.
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
+  const [upNextPath, setUpNextPath] = useState<string | null>(null)
   // Admin-editable tagline under the header — defaults to the original
   // "LOCAL SELECTS" while the fetch is in flight, so there's no visible
   // flash/empty state before it resolves.
@@ -298,6 +299,19 @@ export function RadioScreen() {
     navigator.mediaSession.playbackState = userStarted && !isPaused ? 'playing' : 'paused'
   }, [userStarted, isPaused])
 
+  // What plays next comes from the radio server (it knows about the admin
+  // queue). Asked again a little after every track change, once the server
+  // has moved on, and once a minute in case an admin queued something.
+  useEffect(() => {
+    const refresh = () => fetchUpNextFilePath().then(setUpNextPath)
+    const first = setTimeout(refresh, 12_000)
+    const timer = setInterval(refresh, 60_000)
+    return () => {
+      clearTimeout(first)
+      clearInterval(timer)
+    }
+  }, [nowPlaying?.title])
+
   // Matches Icecast's reported "artist - title" string back to a row in
   // our own playlist so the current track's real duration and what's next
   // in the (strictly sequential, never-shuffled) rotation can be shown —
@@ -324,8 +338,14 @@ export function RadioScreen() {
   const lastKnownIndexRef = useRef(-1)
   if (currentIndex >= 0) lastKnownIndexRef.current = currentIndex
   const effectiveIndex = currentIndex >= 0 ? currentIndex : lastKnownIndexRef.current
-  const nextEntry =
+  const playlistNextEntry =
     effectiveIndex >= 0 && entries.length > 0 ? entries[(effectiveIndex + 1) % entries.length] : undefined
+  // The radio server's own answer wins: a track an admin queued plays before
+  // the playlist continues. Ignored if it still names the current track (the
+  // answer is cached for a few seconds and can lag a track change).
+  const serverNextEntry = upNextPath ? entries.find((e) => e.track.filePath === upNextPath) : undefined
+  const nextEntry =
+    serverNextEntry && serverNextEntry.track.id !== currentEntry?.track.id ? serverNextEntry : playlistNextEntry
 
   const showConnecting = userStarted && !isPaused && isBuffering
 

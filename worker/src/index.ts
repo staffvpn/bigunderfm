@@ -461,6 +461,84 @@ async function handleSkip(env: Env): Promise<Response> {
   }
 }
 
+// ---------- play-next queue + live music level (Liquidsoap, through skip-bridge) ----------
+
+async function bridge<T>(env: Env, path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  const res = await fetch(`${env.SKIP_BRIDGE_URL}${path}`, {
+    method: init.method ?? 'GET',
+    headers: { Authorization: `Bearer ${env.SKIP_BRIDGE_SECRET}`, 'Content-Type': 'application/json' },
+    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+  })
+  const data = (await res.json().catch(() => null)) as { error?: string } | null
+  if (!res.ok) throw new Error(data?.error || `skip bridge returned ${res.status}`)
+  return data as T
+}
+
+/** Turns a failed call to the radio server into a readable 502 for the admin UI. */
+async function viaBridge(fn: () => Promise<Response>): Promise<Response> {
+  try {
+    return await fn()
+  } catch (err) {
+    return json({ error: `Сервер эфира не ответил: ${(err as Error).message}` }, 502)
+  }
+}
+
+/** The R2 key at the end of a Liquidsoap request URI ("annotate:...:<base>/<key>"). */
+function trackKeyFromUri(env: Env, uri: string): string | null {
+  const i = uri.lastIndexOf(`${env.R2_PUBLIC_BASE}/`)
+  return i === -1 ? null : uri.slice(i + env.R2_PUBLIC_BASE.length + 1)
+}
+
+async function handleListQueue(env: Env): Promise<Response> {
+  const { items } = await bridge<{ items: { rid: number; uri: string }[] }>(env, '/queue')
+  const keyed = items.map((it) => ({ rid: it.rid, key: trackKeyFromUri(env, it.uri) }))
+  const keys = [...new Set(keyed.map((k) => k.key).filter((k): k is string => !!k))]
+  const rows = keys.length
+    ? (
+        await env.DB.prepare(`${TRACK_SELECT} where t.file_path in (${keys.map(() => '?').join(',')})`)
+          .bind(...keys)
+          .all<TrackRow>()
+      ).results
+    : []
+  const byKey = new Map(rows.map((r) => [r.file_path, r]))
+  const entries = keyed.flatMap((k) => {
+    const row = k.key ? byKey.get(k.key) : undefined
+    return row ? [{ rid: k.rid, ...toEntry(row) }] : []
+  })
+  return json({ entries })
+}
+
+async function handleQueueTrack(req: Request, env: Env): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as { trackId?: string } | null
+  if (!body?.trackId) return json({ error: 'trackId required' }, 400)
+  const row = await env.DB.prepare(`${TRACK_SELECT} where t.id = ?`).bind(body.trackId).first<TrackRow>()
+  if (!row) return json({ error: 'Трек не найден' }, 404)
+  // Same annotate format as sync-playlist.sh, so the stream title looks the same.
+  const esc = (s: string) => s.replace(/[\r\n]+/g, ' ').replace(/"/g, '\\"')
+  const artist = row.artist === 'Unknown Artist' ? '' : row.artist
+  const uri = `annotate:title="${esc(row.title)}",artist="${esc(artist)}":${env.R2_PUBLIC_BASE}/${row.file_path}`
+  return json(await bridge(env, '/queue', { method: 'POST', body: { uri } }))
+}
+
+/** What plays after the current track, for the listener's "next track" line.
+    Cached for a few seconds so listeners polling it don't all reach the VPS. */
+async function handleUpNext(env: Env, ctx: ExecutionContext): Promise<Response> {
+  const cacheKey = new Request('https://cache.bigunderfm/up-next')
+  const cached = await caches.default.match(cacheKey)
+  if (cached) return cached
+  let key: string | null = null
+  try {
+    const { uri } = await bridge<{ uri: string }>(env, '/upnext')
+    key = trackKeyFromUri(env, uri)
+  } catch {
+    // Unknown: the app falls back to the next track in playlist order.
+  }
+  const res = json({ filePath: key })
+  res.headers.set('Cache-Control', 'public, max-age=10')
+  ctx.waitUntil(caches.default.put(cacheKey, res.clone()))
+  return res
+}
+
 /**
  * Broadcasts a bot message to everyone who ever opened the app. Works in chunks
  * (client passes `offset` and keeps calling until `next` is null) so one request
@@ -546,6 +624,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
   if (m === 'GET' && path === '/api/playlist') return json({ entries: (await listPlaylist(env, false)).map(toEntry) })
   if (m === 'GET' && path === '/api/show-name') return handleShowName(env)
   if (m === 'GET' && path === '/api/events') return handleListEvents(env)
+  if (m === 'GET' && path === '/api/up-next') return handleUpNext(env, ctx)
   const remind = path.match(/^\/api\/events\/([0-9a-f-]{36})\/remind$/)
   if (remind && m === 'POST') {
     const auth = await requireUser(req, env)
@@ -582,6 +661,19 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (m === 'POST' && path === '/api/admin/skip') return handleSkip(env)
     if (m === 'GET' && path === '/api/admin/live') {
       return json({ url: env.LIVE_INGEST_URL, password: env.LIVE_PASSWORD, slots: ['live1', 'live2', 'live3'] })
+    }
+    if (m === 'GET' && path === '/api/admin/queue') return viaBridge(() => handleListQueue(env))
+    if (m === 'POST' && path === '/api/admin/queue') return viaBridge(() => handleQueueTrack(req, env))
+    const queued = path.match(/^\/api\/admin\/queue\/(\d+)$/)
+    if (queued && m === 'DELETE') {
+      return viaBridge(async () => json(await bridge(env, '/queue/remove', { method: 'POST', body: { rid: Number(queued[1]) } })))
+    }
+    if (m === 'GET' && path === '/api/admin/music-volume') return viaBridge(async () => json(await bridge(env, '/music-volume')))
+    if (m === 'PUT' && path === '/api/admin/music-volume') {
+      const body = (await req.json().catch(() => null)) as { value?: number } | null
+      const value = Number(body?.value)
+      if (!Number.isFinite(value) || value < 0 || value > 1) return json({ error: 'value must be 0..1' }, 400)
+      return viaBridge(async () => json(await bridge(env, '/music-volume', { method: 'POST', body: { value } })))
     }
     if (m === 'POST' && path === '/api/admin/notify') return handleNotify(req, env)
     if (m === 'GET' && path === '/api/admin/events') return handleAdminListEvents(env)

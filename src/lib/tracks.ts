@@ -36,3 +36,31 @@ export async function fetchPlaylist(options: { includeDisabled?: boolean } = {})
 export function toPlaylistTracks(entries: PlaylistEntry[]): PlaylistTrack[] {
   return entries.map((e) => ({ trackId: e.track.id, durationSeconds: e.track.durationSeconds }))
 }
+
+/** A track waiting in the admin "play next" queue; rid identifies it on the radio server. */
+export interface QueueEntry extends PlaylistEntry {
+  rid: number
+}
+
+export async function fetchQueue(): Promise<QueueEntry[]> {
+  const data = await api<{ entries: QueueEntry[] }>('/api/admin/queue')
+  return data.entries
+}
+
+export async function queueTrack(trackId: string): Promise<void> {
+  await api('/api/admin/queue', { method: 'POST', body: { trackId } })
+}
+
+export async function unqueueTrack(rid: number): Promise<void> {
+  await api(`/api/admin/queue/${rid}`, { method: 'DELETE' })
+}
+
+/** File key of the track that plays after the current one, or null if unknown. */
+export async function fetchUpNextFilePath(): Promise<string | null> {
+  try {
+    const data = await api<{ filePath: string | null }>('/api/up-next')
+    return data.filePath
+  } catch {
+    return null
+  }
+}

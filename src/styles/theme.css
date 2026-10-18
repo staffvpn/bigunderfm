@@ -623,6 +623,7 @@ button {
 
 .admin-library__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   /* Lines up under the label, past the drag handle's 32px + the row's 8px gap. */
   padding-left: 40px;
@@ -657,6 +658,46 @@ button {
   width: 100%;
   box-sizing: border-box;
   margin-bottom: 12px;
+}
+
+/* "Play next" queue, above the search. */
+.admin-library__queue {
+  border: 1px solid var(--color-surface-2);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.admin-library__queue-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.admin-library__queue-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.admin-library__queue-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-surface-2);
+}
+
+.admin-library__queue-list li:last-child {
+  border-bottom: none;
+}
+
+.admin-library__queue-list button {
+  flex: none;
+  padding: 2px 10px;
+}
+
+.admin-library__queue-pos {
+  color: var(--color-muted);
 }
 
 .admin-library__edit-input:focus {
@@ -901,6 +942,19 @@ button {
   border-radius: 50%;
   background: #e0245e;
   animation: on-air-dot-blink 1.4s step-start infinite;
+}
+
+.live-broadcast__volume {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.live-broadcast__volume input[type='range'] {
+  width: 100%;
+  accent-color: var(--color-text);
 }
 
 .live-broadcast__meter {

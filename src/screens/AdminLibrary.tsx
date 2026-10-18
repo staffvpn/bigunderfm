@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { api } from '../lib/api'
-import { fetchPlaylist, type PlaylistEntry } from '../lib/tracks'
+import { fetchPlaylist, fetchQueue, queueTrack, unqueueTrack, type PlaylistEntry, type QueueEntry } from '../lib/tracks'
 import { formatDuration } from '../lib/format'
 import { getTelegramUserId } from '../lib/telegram'
 
@@ -13,6 +13,10 @@ const FILE_INPUT_ID = 'admin-library-file-input'
 // reach of someone who could tap it by accident; RLS/telegram-auth are
 // what actually gate the underlying writes for every admin equally).
 const SHUFFLE_ADMIN_TELEGRAM_ID = 432943377
+
+// Queued tracks get played (and leave the queue) on the radio server's own
+// schedule, so the list is refreshed while the library is open.
+const QUEUE_POLL_MS = 30_000
 
 export function AdminLibrary() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
@@ -35,12 +39,30 @@ export function AdminLibrary() {
   const [editTitle, setEditTitle] = useState('')
   const [editArtist, setEditArtist] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
+  const [queue, setQueue] = useState<QueueEntry[]>([])
+  const [queueError, setQueueError] = useState<string | null>(null)
+  const [queueingId, setQueueingId] = useState<string | null>(null)
 
   async function reload() {
     // includeDisabled: the admin must still see (and be able to re-enable)
     // disabled tracks, and reorder renumbering must cover every row.
     setEntries(await fetchPlaylist({ includeDisabled: true }))
   }
+
+  async function reloadQueue() {
+    try {
+      setQueue(await fetchQueue())
+      setQueueError(null)
+    } catch (err) {
+      setQueueError((err as Error).message)
+    }
+  }
+
+  useEffect(() => {
+    reloadQueue()
+    const timer = setInterval(reloadQueue, QUEUE_POLL_MS)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     reload()
@@ -104,6 +126,27 @@ export function AdminLibrary() {
       setResults([`ОШИБКА УДАЛЕНИЯ: ${(err as Error).message}`])
     }
     reload()
+  }
+
+  async function handleQueue(trackId: string) {
+    setQueueingId(trackId)
+    try {
+      await queueTrack(trackId)
+    } catch (err) {
+      setQueueError((err as Error).message)
+    } finally {
+      setQueueingId(null)
+    }
+    reloadQueue()
+  }
+
+  async function handleUnqueue(rid: number) {
+    try {
+      await unqueueTrack(rid)
+    } catch (err) {
+      setQueueError((err as Error).message)
+    }
+    reloadQueue()
   }
 
   async function handleToggle(trackId: string, isEnabled: boolean) {
@@ -327,6 +370,31 @@ export function AdminLibrary() {
         ))}
       </ul>
 
+      <div className="admin-library__queue">
+        <span className="admin-library__queue-title">ОЧЕРЕДЬ</span>
+        {queue.length === 0 ? (
+          <p className="admin-library__rotation-summary">
+            Пусто — эфир идёт по плейлисту. Найди трек и нажми «В очередь»: он сыграет сразу после текущего, а
+            потом плейлист продолжится с того же места.
+          </p>
+        ) : (
+          <ul className="admin-library__queue-list">
+            {queue.map((q, i) => (
+              <li key={q.rid}>
+                <span className="admin-library__label">
+                  {i + 1}. {q.track.artist} — {q.track.title}{' '}
+                  <span className="admin-library__queue-pos">(№{q.position})</span>
+                </span>
+                <button onClick={() => handleUnqueue(q.rid)} aria-label="Убрать из очереди">
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {queueError && <p className="admin-radio-controls__error">{queueError}</p>}
+      </div>
+
       <input
         className="admin-library__edit-input admin-library__search"
         type="search"
@@ -392,6 +460,9 @@ export function AdminLibrary() {
                   </span>
                 </div>
                 <div className="admin-library__actions">
+                  <button onClick={() => handleQueue(entry.track.id)} disabled={queueingId === entry.track.id}>
+                    {queueingId === entry.track.id ? '...' : 'В очередь'}
+                  </button>
                   <button onClick={() => startEdit(entry)}>Изменить</button>
                   <button onClick={() => handleToggle(entry.track.id, entry.track.isEnabled)}>
                     {entry.track.isEnabled ? 'Выключить' : 'Включить'}
