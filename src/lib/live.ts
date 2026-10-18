@@ -1,4 +1,5 @@
 import { api } from './api'
+import { joinCall, leaveCall, primeCallAudio } from './hostCall'
 
 // Going live from the admin tab: the phone's microphone is recorded with
 // MediaRecorder and streamed over a WebSocket to Liquidsoap's input.harbor on
@@ -22,6 +23,7 @@ interface LiveCredentials {
   url: string
   password: string
   slots: string[]
+  iceServers?: RTCIceServer[]
 }
 
 // How long a freshly opened socket must stay open after the hello for the
@@ -102,6 +104,7 @@ function startMeter(stream: MediaStream) {
 }
 
 function cleanup() {
+  leaveCall()
   cancelAnimationFrame(meterFrame)
   if (recorder && recorder.state !== 'inactive') recorder.stop()
   recorder = null
@@ -121,6 +124,8 @@ function cleanup() {
 export async function startLive(): Promise<void> {
   if (state.phase === 'starting' || state.phase === 'live') return
   stopping = false
+  // Before any await: unlocking sound needs the tap that got us here.
+  primeCallAudio()
   setState({ phase: 'starting', error: null, slot: null, startedAt: null, level: 0 })
 
   try {
@@ -173,6 +178,7 @@ export async function startLive(): Promise<void> {
     }
 
     setState({ phase: 'live', slot, startedAt: Date.now() })
+    joinCall(micStream, creds.iceServers)
   } catch (err) {
     cleanup()
     setState({ phase: 'error', error: (err as Error).message, level: 0 })

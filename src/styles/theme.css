@@ -944,6 +944,22 @@ button {
   animation: on-air-dot-blink 1.4s step-start infinite;
 }
 
+.live-broadcast__call {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.live-broadcast__peer.is-connected {
+  color: #2ecc40;
+}
+
+.live-broadcast__peer.is-failed {
+  color: #ff4136;
+}
+
 .live-broadcast__volume {
   display: flex;
   flex-direction: column;

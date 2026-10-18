@@ -16,9 +16,17 @@ bucket_name = "bigunderfm-media"
 name = "PRESENCE"
 class_name = "Presence"
 
+[[durable_objects.bindings]]
+name = "LIVE_ROOM"
+class_name = "LiveRoom"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Presence"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["LiveRoom"]
 
 # Samples the Icecast listener count once a minute (see scheduled() in src/index.ts).
 [triggers]
@@ -31,5 +39,6 @@ ICECAST_STATUS_URL = "https://159-194-234-135.sslip.io/status-json.xsl"
 SKIP_BRIDGE_URL = "https://159-194-234-135.sslip.io/skip-bridge"
 # WebSocket entry for going live from the admin tab: nginx -> Liquidsoap input.harbor (127.0.0.1:8005).
 LIVE_INGEST_URL = "wss://159-194-234-135.sslip.io/live/"
+TURN_HOST = "159.194.234.135:3478"
 # Secrets (set with `wrangler secret put`): TELEGRAM_BOT_TOKEN, JWT_SECRET,
 # SKIP_BRIDGE_SECRET, INTERNAL_SECRET, WEBHOOK_SECRET

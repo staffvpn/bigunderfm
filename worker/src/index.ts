@@ -5,6 +5,7 @@ import { verifyInitData } from './telegramAuth'
 import { CORS_HEADERS, audioContentType, buildMediaKey, buildTrackKey, imageContentType, json, nowIso, safeEqual, sleep } from './util'
 
 export { Presence } from './presence'
+export { LiveRoom } from './liveRoom'
 
 const JWT_TTL_SECONDS = 12 * 3600
 const MAX_TRACK_BYTES = 50 * 1024 * 1024
@@ -474,6 +475,19 @@ async function bridge<T>(env: Env, path: string, init: { method?: string; body?:
   return data as T
 }
 
+/** STUN plus our own TURN relay (coturn's REST-API scheme: username is
+    "<expiry>:<user>", password is base64 HMAC-SHA1 of it), valid for 12 hours. */
+async function iceServers(env: Env, userId: string): Promise<{ urls: string | string[]; username?: string; credential?: string }[]> {
+  const username = `${Math.floor(Date.now() / 1000) + 12 * 3600}:${userId}`
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.TURN_SECRET), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign'])
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(username)))
+  const credential = btoa(String.fromCharCode(...sig))
+  return [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: [`turn:${env.TURN_HOST}?transport=udp`, `turn:${env.TURN_HOST}?transport=tcp`], username, credential },
+  ]
+}
+
 /** Turns a failed call to the radio server into a readable 502 for the admin UI. */
 async function viaBridge(fn: () => Promise<Response>): Promise<Response> {
   try {
@@ -631,6 +645,17 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (auth instanceof Response) return auth
     return handleRemindMe(env, remind[1], Number(auth.sub))
   }
+  // Hosts' call signalling. Browsers can't put a header on a WebSocket, so the
+  // session token comes in the query string; admins only.
+  if (path === '/api/live/room') {
+    const token = url.searchParams.get('token') ?? ''
+    const claims = token ? await verifyJwt(token, env.JWT_SECRET) : null
+    const isAdmin =
+      claims?.admin &&
+      (await env.DB.prepare('select 1 as ok from admins where telegram_user_id = ?').bind(Number(claims.sub)).first())
+    if (!isAdmin) return json({ error: 'not authorized' }, 403)
+    return env.LIVE_ROOM.get(env.LIVE_ROOM.idFromName('hosts')).fetch(req)
+  }
   if (path === '/api/presence') {
     const stub = env.PRESENCE.get(env.PRESENCE.idFromName('room'))
     return stub.fetch(req)
@@ -660,7 +685,19 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     // Cheap (no database): the dashboard polls this every few seconds.
     if (m === 'POST' && path === '/api/admin/skip') return handleSkip(env)
     if (m === 'GET' && path === '/api/admin/live') {
-      return json({ url: env.LIVE_INGEST_URL, password: env.LIVE_PASSWORD, slots: ['live1', 'live2', 'live3'] })
+      return json({
+        url: env.LIVE_INGEST_URL,
+        password: env.LIVE_PASSWORD,
+        slots: ['live1', 'live2', 'live3'],
+        iceServers: await iceServers(env, auth.sub),
+      })
+    }
+    if (m === 'GET' && path === '/api/admin/voice-gain') return viaBridge(async () => json(await bridge(env, '/voice-gain')))
+    if (m === 'PUT' && path === '/api/admin/voice-gain') {
+      const body = (await req.json().catch(() => null)) as { value?: number } | null
+      const value = Number(body?.value)
+      if (!Number.isFinite(value) || value < 0.5 || value > 6) return json({ error: 'value must be 0.5..6' }, 400)
+      return viaBridge(async () => json(await bridge(env, '/voice-gain', { method: 'POST', body: { value } })))
     }
     if (m === 'GET' && path === '/api/admin/queue') return viaBridge(() => handleListQueue(env))
     if (m === 'POST' && path === '/api/admin/queue') return viaBridge(() => handleQueueTrack(req, env))

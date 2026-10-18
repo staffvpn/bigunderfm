@@ -1,42 +1,75 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { getLiveState, startLive, stopLive, subscribeLive, type LiveState } from '../lib/live'
+import { getCallState, resumeCallAudio, subscribeCall, type CallState } from '../lib/hostCall'
 import { formatDuration } from '../lib/format'
 
 // The slider sends its value this long after the finger stops, not on every step.
-const VOLUME_SEND_DELAY_MS = 300
+const LEVEL_SEND_DELAY_MS = 300
+
+/** A level stored on the radio server (shared by all admins), shown in %. */
+function LevelSlider(props: { label: string; endpoint: string; min: number; max: number; step: number; fallback: number }) {
+  const { label, endpoint, min, max, step, fallback } = props
+  const [percent, setPercent] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    api<{ value: number }>(endpoint)
+      .then((r) => setPercent(Math.round(r.value * 100)))
+      .catch((err) => setError((err as Error).message))
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [endpoint])
+
+  function handleChange(next: number) {
+    setPercent(next)
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(async () => {
+      try {
+        await api(endpoint, { method: 'PUT', body: { value: next / 100 } })
+        setError(null)
+      } catch (err) {
+        setError((err as Error).message)
+      }
+    }, LEVEL_SEND_DELAY_MS)
+  }
+
+  return (
+    <>
+      <label className="live-broadcast__volume">
+        <span>
+          {label}: <b>{percent === null ? '—' : `${percent}%`}</b>
+        </span>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={percent ?? fallback}
+          disabled={percent === null}
+          onChange={(e) => handleChange(Number(e.target.value))}
+        />
+      </label>
+      {error && <p className="admin-radio-controls__error">{error}</p>}
+    </>
+  )
+}
+
+const PEER_STATE_LABEL: Record<string, string> = {
+  connecting: 'соединяю…',
+  connected: 'на связи',
+  failed: 'нет связи',
+}
 
 export function LiveBroadcast() {
   const [live, setLive] = useState<LiveState>(getLiveState())
+  const [call, setCall] = useState<CallState>(getCallState())
   const [, setTick] = useState(0)
-  // Music level under the hosts' voices, 0..100 (%); null until loaded.
-  const [musicVolume, setMusicVolume] = useState<number | null>(null)
-  const [volumeError, setVolumeError] = useState<string | null>(null)
-  const volumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => subscribeLive(setLive), [])
-
-  useEffect(() => {
-    api<{ value: number }>('/api/admin/music-volume')
-      .then((r) => setMusicVolume(Math.round(r.value * 100)))
-      .catch((err) => setVolumeError((err as Error).message))
-    return () => {
-      if (volumeTimerRef.current) clearTimeout(volumeTimerRef.current)
-    }
-  }, [])
-
-  function handleVolumeChange(percent: number) {
-    setMusicVolume(percent)
-    if (volumeTimerRef.current) clearTimeout(volumeTimerRef.current)
-    volumeTimerRef.current = setTimeout(async () => {
-      try {
-        await api('/api/admin/music-volume', { method: 'PUT', body: { value: percent / 100 } })
-        setVolumeError(null)
-      } catch (err) {
-        setVolumeError((err as Error).message)
-      }
-    }, VOLUME_SEND_DELAY_MS)
-  }
+  useEffect(() => subscribeCall(setCall), [])
 
   useEffect(() => {
     if (live.phase !== 'live') return
@@ -64,6 +97,21 @@ export function LiveBroadcast() {
         </div>
       )}
 
+      {isLive && (
+        <div className="live-broadcast__call">
+          {call.peers.length === 0 ? (
+            <span>Других ведущих в эфире нет — когда кто-то выйдет, вы сразу услышите друг друга.</span>
+          ) : (
+            call.peers.map((p) => (
+              <span key={p.id} className={`live-broadcast__peer is-${p.state}`}>
+                {p.name} — {PEER_STATE_LABEL[p.state]}
+              </span>
+            ))
+          )}
+          {call.needsTap && <button onClick={resumeCallAudio}>ВКЛЮЧИТЬ ЗВУК ВЕДУЩИХ</button>}
+        </div>
+      )}
+
       {isLive ? (
         <button onClick={stopLive}>ЗАКОНЧИТЬ ЭФИР</button>
       ) : (
@@ -74,26 +122,16 @@ export function LiveBroadcast() {
 
       {live.error && <p className="admin-radio-controls__error">{live.error}</p>}
 
-      <label className="live-broadcast__volume">
-        <span>
-          Музыка под голосом: <b>{musicVolume === null ? '—' : `${musicVolume}%`}</b>
-        </span>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={5}
-          value={musicVolume ?? 20}
-          disabled={musicVolume === null}
-          onChange={(e) => handleVolumeChange(Number(e.target.value))}
-        />
-      </label>
-      {volumeError && <p className="admin-radio-controls__error">{volumeError}</p>}
+      <LevelSlider label="Громкость голосов" endpoint="/api/admin/voice-gain" min={50} max={600} step={10} fallback={250} />
+      <LevelSlider label="Музыка под голосом" endpoint="/api/admin/music-volume" min={0} max={100} step={5} fallback={20} />
 
       <p className="admin-dashboard__show-name-status">
-        Музыка затихает до громкости на ползунке, пока вы говорите (её можно менять прямо во время эфира; настройка общая для всех админов), и возвращается, когда эфир закончен. Слушатели слышат вас с задержкой
-        5–10 секунд. Не слушайте радио на этом же телефоне без наушников — будет эхо. Не сворачивайте Telegram и не
-        блокируйте экран, иначе эфир прервётся. Одновременно могут выйти до трёх человек.
+        Ведущие в эфире слышат друг друга сразу, как по телефону, — обязательно в наушниках, иначе голоса
+        попадут в микрофон и в эфир. Слушатели слышат вас с задержкой 5–10 секунд. Сам эфир на этом телефоне не
+        включайте — будете слышать себя с опозданием. Музыка затихает до уровня на ползунке, пока кто-то в эфире, и
+        возвращается, когда все закончили. Оба ползунка можно двигать прямо во время эфира, настройки общие для всех
+        админов. Не сворачивайте Telegram и не блокируйте экран, иначе эфир прервётся. Одновременно — до трёх
+        ведущих.
       </p>
     </div>
   )

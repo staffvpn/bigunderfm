@@ -43,3 +43,9 @@ export function getTelegramUserId(): number | null {
   const user = webApp?.initDataUnsafe?.user as { id?: number } | undefined
   return typeof user?.id === 'number' ? user.id : null
 }
+
+/** The caller's Telegram first name (or @username), for display only. */
+export function getTelegramDisplayName(): string {
+  const user = getTelegramWebApp()?.initDataUnsafe?.user as { first_name?: string; username?: string } | undefined
+  return user?.first_name || (user?.username ? `@${user.username}` : '')
+}
