@@ -881,6 +881,40 @@ button {
   margin-bottom: 16px;
 }
 
+.live-broadcast.is-live {
+  border-color: #e0245e;
+}
+
+.live-broadcast__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 900;
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: #e0245e;
+}
+
+.live-broadcast__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #e0245e;
+  animation: on-air-dot-blink 1.4s step-start infinite;
+}
+
+.live-broadcast__meter {
+  height: 6px;
+  background: var(--color-surface-2);
+  overflow: hidden;
+}
+
+.live-broadcast__meter-fill {
+  height: 100%;
+  background: #2ecc40;
+  transition: width 80ms linear;
+}
+
 .admin-dashboard__show-name-label {
   font-size: 10px;
   font-weight: 700;

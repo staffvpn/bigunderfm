@@ -29,5 +29,7 @@ crons = ["* * * * *"]
 R2_PUBLIC_BASE = "https://pub-4940e64168824086a7fd4cf46cf01d65.r2.dev"
 ICECAST_STATUS_URL = "https://159-194-234-135.sslip.io/status-json.xsl"
 SKIP_BRIDGE_URL = "https://159-194-234-135.sslip.io/skip-bridge"
+# WebSocket entry for going live from the admin tab: nginx -> Liquidsoap input.harbor (127.0.0.1:8005).
+LIVE_INGEST_URL = "wss://159-194-234-135.sslip.io/live/"
 # Secrets (set with `wrangler secret put`): TELEGRAM_BOT_TOKEN, JWT_SECRET,
 # SKIP_BRIDGE_SECRET, INTERNAL_SECRET, WEBHOOK_SECRET

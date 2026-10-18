@@ -10,6 +10,9 @@ export interface Env {
   SKIP_BRIDGE_SECRET: string
   INTERNAL_SECRET: string
   WEBHOOK_SECRET: string
+  // Password for Liquidsoap's live input (input.harbor on the VPS); handed only to admins.
+  LIVE_PASSWORD: string
+  LIVE_INGEST_URL: string
   // Optional read-only Cloudflare token (Account Analytics: Read) + account id,
   // used only by /status to show real request usage against the plan limits.
   CF_ANALYTICS_TOKEN?: string

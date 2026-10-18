@@ -4,6 +4,7 @@ import { fetchIcecastStatus, type IcecastStatus } from '../lib/radioServer'
 import { fetchAdminStats, STORAGE_LIMIT_BYTES, type AdminStats } from '../lib/adminStats'
 import { fetchShowName, updateShowName } from '../lib/showName'
 import { formatDuration, formatElapsedSince, formatBytes } from '../lib/format'
+import { LiveBroadcast } from '../components/LiveBroadcast'
 
 // Above this fraction of the free R2 allowance, flag it.
 const STORAGE_WARNING_THRESHOLD = 0.85
@@ -137,6 +138,8 @@ export function AdminRadioControls() {
           закончится, загрузка новых треков может перестать работать.
         </p>
       )}
+
+      <LiveBroadcast />
 
       <div className="admin-dashboard__storage">
         <div className="admin-dashboard__storage-row">

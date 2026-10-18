@@ -580,6 +580,9 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (m === 'GET' && path === '/api/admin/stats') return handleStats(env)
     // Cheap (no database): the dashboard polls this every few seconds.
     if (m === 'POST' && path === '/api/admin/skip') return handleSkip(env)
+    if (m === 'GET' && path === '/api/admin/live') {
+      return json({ url: env.LIVE_INGEST_URL, password: env.LIVE_PASSWORD, slots: ['live1', 'live2', 'live3'] })
+    }
     if (m === 'POST' && path === '/api/admin/notify') return handleNotify(req, env)
     if (m === 'GET' && path === '/api/admin/events') return handleAdminListEvents(env)
     if (m === 'POST' && path === '/api/admin/events') return handleCreateEvent(req, env)
