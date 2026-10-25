@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ApiError } from '../lib/api'
 import { fetchEvents, remindMe, type EventItem } from '../lib/events'
+import { FitTitle } from '../components/FitTitle'
 
 type RemindState = 'idle' | 'sending' | 'done' | 'error'
 
@@ -120,7 +121,7 @@ export function ScheduleScreen() {
                       <br />
                       {time(when)}
                     </span>
-                    <span className="slist__n">{event.title}</span>
+                    <FitTitle className="slist__n" text={event.title} />
                   </button>
                   {isOpen && (event.description || !isPast) && (
                     <div className="slist__more">

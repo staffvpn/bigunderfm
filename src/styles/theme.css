@@ -1638,6 +1638,14 @@ button {
   font-size: 10px;
 }
 
+/* One line, shrunk to fit by FitTitle.tsx. */
+.fit-title {
+  display: block;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
 .slist__description {
   margin: 0;
   font-size: 13px;

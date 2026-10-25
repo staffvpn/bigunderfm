@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchEvents, type EventItem } from '../lib/events'
+import { FitTitle } from './FitTitle'
 
 const POLL_MS = 60 * 60_000
 
@@ -43,7 +44,7 @@ export function NextShowCard() {
           <br />
           {time(when)}
         </span>
-        <span className="slist__n">{next.title}</span>
+        <FitTitle className="slist__n" text={next.title} />
       </div>
     </div>
   )
