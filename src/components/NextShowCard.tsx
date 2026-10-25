@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
 import { fetchEvents, type EventItem } from '../lib/events'
-import { formatEventDateTime } from '../lib/format'
 
 const POLL_MS = 60 * 60_000
 
-/** Card under the Live cover showing the nearest upcoming show. Renders
-    nothing when there are no upcoming events. */
+const weekday = (d: Date) => d.toLocaleDateString('ru-RU', { weekday: 'short' }).toUpperCase().replace('.', '')
+const dayMonth = (d: Date) => `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`
+const time = (d: Date) => d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+
+/** The nearest upcoming show under the Live cover, as one row of the
+    schedule list (bigunder.ru style): in ink when it is today, pale
+    otherwise. Renders nothing when there are no upcoming events. */
 export function NextShowCard() {
   const [next, setNext] = useState<EventItem | null>(null)
 
@@ -28,13 +32,18 @@ export function NextShowCard() {
 
   if (!next) return null
 
+  const when = new Date(next.eventAt)
+  const isToday = when.toDateString() === new Date().toDateString()
+
   return (
-    <div className="next-show">
-      {next.imageUrl && <img src={next.imageUrl} alt="" className="next-show__image" />}
-      <div className="next-show__body">
-        <span className="next-show__datetime">{formatEventDateTime(next.eventAt)}</span>
-        <span className="next-show__title">{next.title}</span>
-        {next.description && <span className="next-show__description">{next.description}</span>}
+    <div className={`slist__row next-show${isToday ? ' is-today' : ''}`}>
+      <div className="slist__line">
+        <span className="slist__d">
+          {isToday ? 'СЕГОДНЯ' : `${weekday(when)} ${dayMonth(when)}`}
+          <br />
+          {time(when)}
+        </span>
+        <span className="slist__n">{next.title}</span>
       </div>
     </div>
   )
