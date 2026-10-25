@@ -34,6 +34,7 @@ export function ScheduleScreen() {
   // The row whose description and reminder button are shown.
   const [openId, setOpenId] = useState<string | null>(null)
   const now = Date.now()
+  const today = new Date(now).toDateString()
 
   useEffect(() => {
     fetchEvents().then(setEvents)
@@ -104,22 +105,21 @@ export function ScheduleScreen() {
           </p>
         ) : (
           <ol className="slist">
-            {shown.map((event, index) => {
+            {shown.map((event) => {
               const state = remindState[event.id] ?? 'idle'
               const isPast = view === 'past'
               const when = new Date(event.eventAt)
               const isOpen = openId === event.id
-              // Like the site's schedule: the nearest show in ink, the rest pale.
-              const isNext = !isPast && index === 0
+              // Like the site's schedule: today's shows in ink, the rest pale.
+              const isToday = when.toDateString() === today
               return (
-                <li key={event.id} className={`slist__row${isNext ? ' is-next' : ''}${isOpen ? ' is-open' : ''}`}>
+                <li key={event.id} className={`slist__row${isToday ? ' is-today' : ''}${isOpen ? ' is-open' : ''}`}>
                   <button type="button" className="slist__line" onClick={() => setOpenId(isOpen ? null : event.id)}>
                     <span className="slist__d">
-                      {weekday(when)}
+                      {weekday(when)} {dayMonth(when)}
                       <br />
-                      {dayMonth(when)}
+                      {time(when)}
                     </span>
-                    <span className="slist__t">{time(when)}</span>
                     <span className="slist__n">{event.title}</span>
                   </button>
                   {isOpen && (event.description || !isPast) && (

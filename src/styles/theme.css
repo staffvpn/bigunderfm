@@ -1626,16 +1626,17 @@ button {
   transition: color 0.4s;
 }
 
-.slist__row.is-next,
+.slist__row.is-today,
 .slist__row.is-open {
   color: var(--color-text);
 }
 
 .slist__line {
   display: grid;
-  grid-template-columns: 2.6em 3.6em 1fr;
+  /* Date and time stacked in one narrow column, so the name gets the width. */
+  grid-template-columns: 5.4em 1fr;
   align-items: baseline;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   padding: 10px 0;
   margin: 0;
@@ -1650,8 +1651,7 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
-.slist__d,
-.slist__t {
+.slist__d {
   font-size: 10px;
   line-height: 1.25;
   color: var(--color-muted);
@@ -1661,9 +1661,9 @@ button {
 
 .slist__n {
   font-weight: 800;
-  font-size: min(7vw, 4.6vh);
+  font-size: min(10vw, 6vh);
   letter-spacing: -0.055em;
-  line-height: 0.92;
+  line-height: 0.86;
   text-transform: uppercase;
   overflow-wrap: anywhere;
 }
@@ -1674,7 +1674,7 @@ button {
   align-items: flex-start;
   gap: 10px;
   /* Lines up under the name, past the two small columns. */
-  padding: 0 0 14px calc(6.2em + 12px);
+  padding: 0 0 14px calc(5.4em + 8px);
   font-size: 10px;
 }
 
