@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { fetchIcecastStatus, type IcecastStatus } from '../lib/radioServer'
 import { fetchAdminStats, STORAGE_LIMIT_BYTES, type AdminStats } from '../lib/adminStats'
-import { fetchShowName, updateShowName } from '../lib/showName'
 import { formatDuration, formatElapsedSince, formatBytes } from '../lib/format'
 import { LiveBroadcast } from '../components/LiveBroadcast'
 
@@ -26,10 +25,6 @@ export function AdminRadioControls() {
   const [skipError, setSkipError] = useState<string | null>(null)
   const failureStreakRef = useRef(0)
   const [stats, setStats] = useState<AdminStats | null>(null)
-  const [showNameInput, setShowNameInput] = useState('')
-  const [savingShowName, setSavingShowName] = useState(false)
-  const [showNameSaved, setShowNameSaved] = useState(false)
-  const [showNameError, setShowNameError] = useState<string | null>(null)
   const [notifyText, setNotifyText] = useState('')
   const [notifying, setNotifying] = useState(false)
   const [notifyResult, setNotifyResult] = useState<string | null>(null)
@@ -38,7 +33,6 @@ export function AdminRadioControls() {
   useEffect(() => {
     // Slow-changing numbers (peaks, storage): one fetch per visit.
     fetchAdminStats().then(setStats)
-    fetchShowName().then(setShowNameInput)
 
     async function pollStream() {
       const result = await fetchIcecastStatus()
@@ -59,22 +53,6 @@ export function AdminRadioControls() {
       clearInterval(streamTimer)
     }
   }, [])
-
-  async function handleSaveShowName() {
-    setSavingShowName(true)
-    setShowNameError(null)
-    setShowNameSaved(false)
-    const { error } = await updateShowName(showNameInput)
-    if (error) {
-      setShowNameError(error)
-    } else {
-      // Reflects back whatever was actually persisted (it trims and falls
-      // back to the default for an empty input).
-      setShowNameInput(await fetchShowName())
-      setShowNameSaved(true)
-    }
-    setSavingShowName(false)
-  }
 
   async function handleNotify() {
     const text = notifyText.trim()
@@ -191,30 +169,6 @@ export function AdminRadioControls() {
           <span className="admin-dashboard__tile-value">{status?.bitrateKbps ? `${status.bitrateKbps} kbps` : '—'}</span>
           <span className="admin-dashboard__tile-label">Битрейт</span>
         </div>
-      </div>
-
-      <div className="admin-dashboard__show-name">
-        <label htmlFor="admin-show-name-input" className="admin-dashboard__show-name-label">
-          НАЗВАНИЕ ШОУ
-        </label>
-        <div className="admin-dashboard__show-name-row">
-          <input
-            id="admin-show-name-input"
-            type="text"
-            value={showNameInput}
-            onChange={(e) => {
-              setShowNameInput(e.target.value)
-              setShowNameSaved(false)
-            }}
-            placeholder="LOCAL SELECTS"
-            maxLength={60}
-          />
-          <button onClick={handleSaveShowName} disabled={savingShowName}>
-            {savingShowName ? 'СОХРАНЯЮ...' : 'СОХРАНИТЬ'}
-          </button>
-        </div>
-        {showNameSaved && <p className="admin-dashboard__show-name-status">Сохранено — уже видно в эфире.</p>}
-        {showNameError && <p className="admin-radio-controls__error">{showNameError}</p>}
       </div>
 
       <div className="admin-dashboard__show-name">

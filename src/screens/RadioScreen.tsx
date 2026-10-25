@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { STREAM_HOST, STREAM_URL, decodeHtmlEntities } from '../lib/radioServer'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
 import { fetchPlaylist, fetchUpNextFilePath, type PlaylistEntry } from '../lib/tracks'
-import { fetchShowName, DEFAULT_SHOW_NAME } from '../lib/showName'
 import { OnAirBadge } from '../components/OnAirBadge'
 import { EventTicker } from '../components/EventTicker'
 import { NextShowCard } from '../components/NextShowCard'
-import cornerClip from '../assets/corner-clip.mp4'
+import { ChromePendant } from '../components/ChromePendant'
+import { HeartReactions } from '../components/HeartReactions'
 
 // Real, always-on broadcast — Icecast (distribution) + Liquidsoap
 // (scheduling/encoding) running on a dedicated VPS, streaming the shared
@@ -45,10 +45,6 @@ export function RadioScreen() {
   // matched against nowPlaying below by title/artist.
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
   const [upNextPath, setUpNextPath] = useState<string | null>(null)
-  // Admin-editable tagline under the header — defaults to the original
-  // "LOCAL SELECTS" while the fetch is in flight, so there's no visible
-  // flash/empty state before it resolves.
-  const [showName, setShowName] = useState(DEFAULT_SHOW_NAME)
   // Square cover image OR looping video from src/assets/backgrounds/ —
   // re-rolled on a 6-hour timer (not per-track; the whole point is a
   // stable "vibe" that outlasts any one track), per explicit request.
@@ -83,7 +79,6 @@ export function RadioScreen() {
 
   useEffect(() => {
     fetchPlaylist().then(setEntries)
-    fetchShowName().then(setShowName)
 
     // Icecast exposes the currently-playing title itself — poll it instead
     // of trying to derive "now playing" from playlist position, since the
@@ -358,8 +353,6 @@ export function RadioScreen() {
           <OnAirBadge isPlaying={userStarted && !isPaused && !isBuffering} />
         </div>
 
-        <div className="radio-screen__tagline">{showName}</div>
-
         <div
           className="radio-screen__cover"
           style={background?.type === 'image' ? { backgroundImage: `url(${background.src})` } : undefined}
@@ -385,6 +378,7 @@ export function RadioScreen() {
           )}
           <div className="radio-screen__cover-scrim" aria-hidden="true" />
           <div className="radio-screen__cover-text">
+            <div className="radio-screen__now-label">Сейчас играет</div>
             <div className="radio-screen__artist">{nowPlaying?.artist ?? '—'}</div>
             <div
               className={`radio-screen__cover-title${showConnecting ? ' radio-screen__cover-title--status' : ''}`}
@@ -405,32 +399,24 @@ export function RadioScreen() {
               </span>
             )}
           </div>
-          {/* Replaces the old elapsed-time readout, per explicit request —
-              it was never a real synced position anyway (see the removed
-              state's comment history), just a rough approximation nobody
-              found useful. Muted/autoplay/playsInline so mobile WebViews
-              (Telegram's included) actually loop it inline. */}
-          <video
-            className="radio-screen__corner-clip"
-            src={cornerClip}
-            autoPlay
-            loop
-            muted
-            playsInline
-            aria-hidden="true"
-          />
+          {/* The chrome plate from bigunder.ru, in place of the old looping
+              graffiti clip. */}
+          <ChromePendant playing={userStarted && !isPaused && !isBuffering} />
         </div>
 
-        <button
-          className={`radio-screen__play${isBuffering ? ' radio-screen__play--buffering' : ''}`}
-          onClick={handlePlayClick}
-          disabled={userStarted && !isPaused && isBuffering}
-        >
-          {/* CSS-drawn shapes, not Unicode glyphs (▶ renders as a colored
-              emoji glyph on iOS instead of a plain triangle) — this way play
-              and pause are guaranteed the same visual style everywhere. */}
-          {userStarted && !isPaused ? <span className="icon-pause" /> : <span className="icon-play" />}
-        </button>
+        <div className="radio-screen__controls">
+          <button
+            className={`radio-screen__play${isBuffering ? ' radio-screen__play--buffering' : ''}`}
+            onClick={handlePlayClick}
+            disabled={userStarted && !isPaused && isBuffering}
+          >
+            {/* CSS-drawn shapes, not Unicode glyphs (▶ renders as a colored
+                emoji glyph on iOS instead of a plain triangle) — this way play
+                and pause are guaranteed the same visual style everywhere. */}
+            {userStarted && !isPaused ? <span className="icon-pause" /> : <span className="icon-play" />}
+          </button>
+          <HeartReactions />
+        </div>
 
         {connectError && (
           <div className="radio-screen__error">Не удалось подключиться. Нажмите play, чтобы попробовать снова.</div>

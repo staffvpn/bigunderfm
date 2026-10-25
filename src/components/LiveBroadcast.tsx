@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import { getLiveState, startLive, stopLive, subscribeLive, type LiveState } from '../lib/live'
 import { getCallState, resumeCallAudio, subscribeCall, type CallState } from '../lib/hostCall'
 import { formatDuration } from '../lib/format'
+import { subscribeHearts } from '../lib/presence'
 
 // The slider sends its value this long after the finger stops, not on every step.
 const LEVEL_SEND_DELAY_MS = 300
@@ -67,6 +68,8 @@ export function LiveBroadcast() {
   const [live, setLive] = useState<LiveState>(getLiveState())
   const [call, setCall] = useState<CallState>(getCallState())
   const [, setTick] = useState(0)
+  // Hearts listeners sent since this host went live.
+  const [hearts, setHearts] = useState(0)
 
   useEffect(() => subscribeLive(setLive), [])
   useEffect(() => subscribeCall(setCall), [])
@@ -74,7 +77,12 @@ export function LiveBroadcast() {
   useEffect(() => {
     if (live.phase !== 'live') return
     const timer = setInterval(() => setTick((t) => t + 1), 1000)
-    return () => clearInterval(timer)
+    setHearts(0)
+    const unsubscribe = subscribeHearts((n) => setHearts((h) => h + n))
+    return () => {
+      clearInterval(timer)
+      unsubscribe()
+    }
   }, [live.phase])
 
   const isLive = live.phase === 'live'
@@ -88,6 +96,7 @@ export function LiveBroadcast() {
         <div className="live-broadcast__status">
           <span className="live-broadcast__dot" />
           ВЫ В ЭФИРЕ {elapsed}
+          <span className="live-broadcast__hearts">♥ {hearts}</span>
         </div>
       )}
 
