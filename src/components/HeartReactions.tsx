@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { sendHeart, subscribeHearts } from '../lib/presence'
 
-// Hearts, in the bigunder.ru look: a thin outline button (like the site's
-// line icons) and chrome hearts (the pendant's metal) floating up from it.
+// Hearts, in the bigunder.ru look: a debossed button and plain white hearts
+// floating up from it.
 // Your taps float right away; hearts from everyone else listening arrive in
 // small batches and float up the same way.
 
@@ -25,20 +25,10 @@ let nextId = 1
 const HEART_PATH =
   'M12 21s-7.5-4.6-9.6-9.3C.9 8.4 2.6 4.5 6.3 4.1c2.2-.2 3.9 1 5.7 3.1 1.8-2.1 3.5-3.3 5.7-3.1 3.7.4 5.4 4.3 3.9 7.6C19.5 16.4 12 21 12 21z'
 
-function ChromeHeart({ size }: { size: number }) {
+function WhiteHeart({ size }: { size: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <defs>
-        <linearGradient id="chrome-heart" x1="0" y1="0" x2="0.35" y2="1">
-          <stop offset="0" stopColor="#ffffff" />
-          <stop offset="0.28" stopColor="#b9c0c6" />
-          <stop offset="0.5" stopColor="#3a3f44" />
-          <stop offset="0.62" stopColor="#d5dade" />
-          <stop offset="0.85" stopColor="#6b7178" />
-          <stop offset="1" stopColor="#e9ecee" />
-        </linearGradient>
-      </defs>
-      <path d={HEART_PATH} fill="url(#chrome-heart)" stroke="#f2f2f0" strokeWidth="0.6" />
+      <path d={HEART_PATH} fill="#ffffff" stroke="rgba(0, 0, 0, 0.08)" strokeWidth="0.6" />
     </svg>
   )
 }
@@ -97,7 +87,7 @@ export function HeartReactions() {
               } as CSSProperties
             }
           >
-            <ChromeHeart size={f.size} />
+            <WhiteHeart size={f.size} />
           </span>
         ))}
       </div>

@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
 import { ApiError } from '../lib/api'
 import { fetchEvents, remindMe, type EventItem } from '../lib/events'
-import { formatEventDateTime } from '../lib/format'
 
 type RemindState = 'idle' | 'sending' | 'done' | 'error'
+
+// Row labels as on bigunder.ru: weekday, date and time in small caps, local time.
+const weekday = (d: Date) => d.toLocaleDateString('ru-RU', { weekday: 'short' }).toUpperCase().replace('.', '')
+const dayMonth = (d: Date) => `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`
+const time = (d: Date) => d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 
 function remindLabel(state: RemindState): string {
   switch (state) {
@@ -27,6 +31,8 @@ export function ScheduleScreen() {
   const [remindState, setRemindState] = useState<Record<string, RemindState>>({})
   const [remindNote, setRemindNote] = useState<Record<string, string>>({})
   const [view, setView] = useState<'upcoming' | 'past'>('upcoming')
+  // The row whose description and reminder button are shown.
+  const [openId, setOpenId] = useState<string | null>(null)
   const now = Date.now()
 
   useEffect(() => {
@@ -94,38 +100,45 @@ export function ScheduleScreen() {
               : 'Прошедших событий пока нет.'}
           </p>
         ) : (
-          <ul className="schedule-screen__list">
-            {shown.map((event) => {
+          <ol className="slist">
+            {shown.map((event, index) => {
               const state = remindState[event.id] ?? 'idle'
               const isPast = view === 'past'
+              const when = new Date(event.eventAt)
+              const isOpen = openId === event.id
+              // Like the site's schedule: the nearest show in ink, the rest pale.
+              const isNext = !isPast && index === 0
               return (
-                <li key={event.id} className="schedule-screen__item">
-                  <div className="schedule-screen__item-main">
-                    {event.imageUrl && (
-                      <img src={event.imageUrl} alt="" className="schedule-screen__item-image" />
-                    )}
-                    <div className="schedule-screen__item-body">
-                      <span className="schedule-screen__item-datetime">{formatEventDateTime(event.eventAt)}{isPast ? ' · ПРОШЛО' : ''}</span>
-                      <span className="schedule-screen__item-title">{event.title}</span>
-                      {event.description && (
-                        <span className="schedule-screen__item-description">{event.description}</span>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    className="schedule-screen__remind-button"
-                    onClick={() => handleRemind(event.id)}
-                    disabled={isPast || state === 'sending' || state === 'done'}
-                  >
-                    {remindLabel(state)}
+                <li key={event.id} className={`slist__row${isNext ? ' is-next' : ''}${isOpen ? ' is-open' : ''}`}>
+                  <button type="button" className="slist__line" onClick={() => setOpenId(isOpen ? null : event.id)}>
+                    <span className="slist__d">
+                      {weekday(when)}
+                      <br />
+                      {dayMonth(when)}
+                    </span>
+                    <span className="slist__t">{time(when)}</span>
+                    <span className="slist__n">{event.title}</span>
                   </button>
-                  {remindNote[event.id] && (
-                    <span className="schedule-screen__remind-note">{remindNote[event.id]}</span>
+                  {isOpen && (event.description || !isPast) && (
+                    <div className="slist__more">
+                      {event.description && <p className="slist__description">{event.description}</p>}
+                      {!isPast && (
+                        <button
+                          type="button"
+                          className="slist__remind"
+                          onClick={() => handleRemind(event.id)}
+                          disabled={state === 'sending' || state === 'done'}
+                        >
+                          {remindLabel(state)}
+                        </button>
+                      )}
+                      {remindNote[event.id] && <span className="schedule-screen__remind-note">{remindNote[event.id]}</span>}
+                    </div>
                   )}
                 </li>
               )
             })}
-          </ul>
+          </ol>
         )}
       </div>
     </div>
