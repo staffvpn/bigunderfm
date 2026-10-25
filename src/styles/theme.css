@@ -1,17 +1,24 @@
 :root {
-  --color-bg: #000000;
-  --color-surface: #1f1f1f;
-  --color-surface-2: #262626;
-  --color-text: #f2f2f0;
-  --color-muted: #8a8a86;
-  --color-accent: #ffffff;
-  --color-accent-ink: #151515;
+  /* White paper and black ink, the colours of bigunder.ru. */
+  --color-bg: #ffffff;
+  --color-surface: #f2f2f0;
+  --color-surface-2: #e7e7e4;
+  --color-text: #121212;
+  --color-muted: #8e8e89;
+  --color-accent: #121212;
+  --color-accent-ink: #ffffff;
   /* Same type as bigunder.ru: Inter Tight for everything, Playfair italic
      for track titles, IBM Plex Mono for small labels. */
   --font-display: 'Inter Tight', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-serif: 'Playfair Display', 'Didot', 'Bodoni 72', Georgia, serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
-  --color-line: #2a2a28;
+  --color-line: #e7e7e4;
+  /* Embossed controls: raised from the paper, icons pressed into it. */
+  --emboss-face: linear-gradient(145deg, #ffffff 0%, #f1f1ee 100%);
+  --emboss-raise: 6px 8px 16px rgba(0, 0, 0, 0.13), -4px -4px 10px rgba(255, 255, 255, 0.9), inset 1px 1px 0 rgba(255, 255, 255, 0.9), inset -1px -1px 1px rgba(0, 0, 0, 0.05);
+  --emboss-pressed: inset 4px 5px 10px rgba(0, 0, 0, 0.14), inset -3px -3px 8px rgba(255, 255, 255, 0.95);
+  --emboss-ink: #c4c4bf;
+  --emboss-cut: drop-shadow(1px 1px 0 rgba(255, 255, 255, 1)) drop-shadow(-1px -1px 0 rgba(0, 0, 0, 0.28));
 }
 
 * {
@@ -39,6 +46,8 @@ button {
 
 .app-loading__logo {
   width: min(50vw, 200px);
+  /* The logo file is white (it is also the lock-screen artwork); black on the white page. */
+  filter: invert(1);
   animation: pulse 1.6s ease-in-out infinite;
 }
 
@@ -93,12 +102,12 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
+  padding: 7px 14px;
   background: none;
   border: 1px solid var(--color-muted);
-  border-radius: 0;
+  border-radius: 999px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.04em;
   color: var(--color-muted);
@@ -140,18 +149,18 @@ button {
   font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: rgba(242, 242, 240, 0.7);
+  color: rgba(255, 255, 255, 0.75);
   margin-bottom: 6px;
 }
 
 .radio-screen__artist {
-  color: var(--color-text);
+  color: #ffffff;
   text-transform: uppercase;
-  font-size: clamp(26px, 9vw, 52px);
+  font-size: clamp(23px, 8vw, 46px);
   font-weight: 800;
   letter-spacing: -0.05em;
-  line-height: 0.9;
-  margin-bottom: 6px;
+  line-height: 0.84;
+  margin-bottom: 2px;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -176,9 +185,8 @@ button {
   /* Breaks out of .radio-screen__content's 20px left/right padding to run
      edge-to-edge — width: 100% alone stays inside that padding, since
      percentages resolve against the (already-padded) content box. */
-  width: calc(100% + 40px);
-  margin-left: -20px;
-  margin-right: -20px;
+  width: 100%;
+  border-radius: 20px;
   flex: 1 1 0;
   min-height: 140px;
   max-height: 100vw;
@@ -226,11 +234,11 @@ button {
 .radio-screen__cover-title {
   font-family: var(--font-serif);
   font-style: italic;
-  font-size: clamp(20px, 6.5vw, 36px);
-  line-height: 1.05;
+  font-size: clamp(18px, 5.8vw, 32px);
+  line-height: 0.95;
   font-weight: 400;
   letter-spacing: -0.01em;
-  color: var(--color-text);
+  color: #ffffff;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -255,11 +263,10 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 0;
+  padding: 10px;
   background: none;
-  border-top: 1px solid var(--color-text);
-  border-bottom: 1px solid var(--color-line);
-  border-radius: 0;
+  border: 1px solid var(--color-line);
+  border-radius: 16px;
 }
 
 .next-show__image {
@@ -267,7 +274,7 @@ button {
   height: 56px;
   object-fit: cover;
   flex-shrink: 0;
-  border-radius: 0;
+  border-radius: 10px;
   background: var(--color-surface-2);
 }
 
@@ -457,7 +464,7 @@ button {
   top: 78%;
   height: 34%;
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03) 60%, rgba(255, 255, 255, 0));
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.08) 55%, rgba(0, 0, 0, 0));
   pointer-events: none;
 }
 
@@ -503,13 +510,22 @@ button {
   justify-content: center;
   border-radius: 50%;
   border: none;
-  background: linear-gradient(160deg, #ffffff 0%, #d5dade 30%, #8d949b 52%, #eef0f2 72%, #a9b0b6 100%);
-  box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.9),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.35),
-    0 6px 18px rgba(255, 255, 255, 0.08);
-  color: #121212;
+  background: var(--emboss-face);
+  box-shadow: var(--emboss-raise);
+  color: var(--emboss-ink);
   cursor: pointer;
+  transition: box-shadow 0.15s ease;
+}
+
+.radio-screen__play:active,
+.hearts__button:active {
+  box-shadow: var(--emboss-pressed);
+}
+
+/* The icon is pressed into the button: light edge below-right, shadow above-left. */
+.radio-screen__play > span,
+.hearts__button svg {
+  filter: var(--emboss-cut);
 }
 
 .hearts {
@@ -527,9 +543,11 @@ button {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  border: 1px solid rgba(242, 242, 240, 0.35);
-  background: none;
-  color: var(--color-text);
+  border: none;
+  background: var(--emboss-face);
+  box-shadow: var(--emboss-raise);
+  color: var(--emboss-ink);
+  transition: box-shadow 0.15s ease;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -561,7 +579,7 @@ button {
   animation-name: hearts-float;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   animation-fill-mode: both;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
 }
 
 @keyframes hearts-float {
@@ -586,10 +604,6 @@ button {
   margin-left: auto;
   font-family: var(--font-mono);
   font-variant-emoji: text;
-}
-
-.radio-screen__play:active {
-  opacity: 0.8;
 }
 
 .radio-screen__play--buffering {
@@ -687,6 +701,7 @@ button {
   letter-spacing: 1px;
   padding: 4px 10px;
   margin: 0 0 16px;
+  border-radius: 12px;
 }
 
 .admin-library__rotation-summary {
@@ -727,6 +742,7 @@ button {
   letter-spacing: 1px;
   cursor: pointer;
   margin-bottom: 16px;
+  border-radius: 10px;
 }
 
 .admin-library__upload-button:active {
@@ -769,7 +785,7 @@ button {
   background: transparent;
   color: var(--color-text);
   border: 1px solid var(--color-muted);
-  border-radius: 50%;
+  border-radius: 10px;
   padding: 0;
   cursor: pointer;
 }
@@ -858,6 +874,7 @@ button {
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
+  border-radius: 10px;
 }
 
 .admin-library__search {
@@ -872,6 +889,7 @@ button {
   border: 1px solid var(--color-surface-2);
   padding: 10px 12px;
   margin-bottom: 12px;
+  border-radius: 14px;
 }
 
 .admin-library__queue-title {
@@ -950,7 +968,7 @@ button {
   color: var(--color-text);
   border: 1px solid var(--color-muted);
   padding: 6px 10px;
-  border-radius: 0;
+  border-radius: 10px;
   cursor: pointer;
   font-weight: 700;
   font-size: 12px;
@@ -990,6 +1008,7 @@ button {
   font-size: 12px;
   font-weight: 700;
   margin: 0 0 16px;
+  border-radius: 12px;
 }
 
 .admin-dashboard__storage {
@@ -1000,6 +1019,7 @@ button {
   border: 1px solid var(--color-surface-2);
   padding: 12px;
   margin-bottom: 16px;
+  border-radius: 14px;
 }
 
 .admin-dashboard__storage-row {
@@ -1027,12 +1047,14 @@ button {
   height: 6px;
   background: var(--color-surface-2);
   overflow: hidden;
+  border-radius: 99px;
 }
 
 .admin-dashboard__storage-bar-fill {
   height: 100%;
   background: var(--color-accent);
   transition: width 400ms ease-out;
+  border-radius: 99px;
 }
 
 .admin-dashboard__storage-bar-fill--warning {
@@ -1072,6 +1094,7 @@ button {
   background: var(--color-surface);
   border: 1px solid var(--color-surface-2);
   padding: 8px 6px 4px;
+  border-radius: 12px;
 }
 
 .admin-dashboard__chart-bar-wrap {
@@ -1127,6 +1150,7 @@ button {
   border: 1px solid var(--color-surface-2);
   padding: 12px;
   margin-bottom: 16px;
+  border-radius: 14px;
 }
 
 .live-broadcast.is-live {
@@ -1184,6 +1208,7 @@ button {
   height: 6px;
   background: var(--color-surface-2);
   overflow: hidden;
+  border-radius: 99px;
 }
 
 .live-broadcast__meter-fill {
@@ -1215,6 +1240,7 @@ button {
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
+  border-radius: 10px;
 }
 
 .admin-dashboard__show-name-row input:focus {
@@ -1233,6 +1259,7 @@ button {
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
+  border-radius: 10px;
 }
 
 .admin-dashboard__notify-input:focus {
@@ -1261,6 +1288,7 @@ button {
   background: var(--color-surface);
   border: 1px solid var(--color-surface-2);
   padding: 12px;
+  border-radius: 14px;
 }
 
 .admin-dashboard__tile-value {
@@ -1288,6 +1316,7 @@ button {
   border: 1px solid var(--color-surface-2);
   padding: 12px;
   margin-bottom: 16px;
+  border-radius: 14px;
 }
 
 .admin-dashboard__now-playing-label {
@@ -1340,6 +1369,7 @@ button {
   text-transform: uppercase;
   letter-spacing: 1px;
   cursor: pointer;
+  border-radius: 10px;
 }
 
 .info-screen__links {
@@ -1359,6 +1389,7 @@ button {
   background: var(--color-surface);
   color: var(--color-text);
   text-decoration: none;
+  border-radius: 14px;
 }
 
 .info-screen__link:active {
@@ -1417,7 +1448,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: #000;
+  background: var(--color-bg);
   border: 1px solid var(--color-surface-2);
   border-radius: 14px;
   padding: 12px;
@@ -1433,7 +1464,7 @@ button {
   height: 64px;
   object-fit: cover;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--color-surface-2);
 }
 
@@ -1478,7 +1509,7 @@ button {
   background: transparent;
   color: var(--color-muted);
   border: 1px solid var(--color-surface-2);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 8px 10px;
   font-weight: 800;
   font-size: 12px;
@@ -1530,6 +1561,7 @@ button {
   border: 1px solid var(--color-surface-2);
   padding: 12px;
   margin-bottom: 16px;
+  border-radius: 14px;
 }
 
 .admin-schedule__form-row {
@@ -1547,6 +1579,7 @@ button {
   font-weight: 700;
   flex: 1;
   min-width: 0;
+  border-radius: 10px;
 }
 
 .admin-schedule__input:focus {
@@ -1576,6 +1609,7 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  border-radius: 10px;
 }
 
 .admin-schedule__hint {
@@ -1628,6 +1662,7 @@ button {
   margin: -20px -20px 4px;
   overflow: hidden;
   background: var(--color-accent);
+  border-radius: 10px;
 }
 
 .event-ticker__track {

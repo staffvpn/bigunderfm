@@ -3,6 +3,8 @@ interface TelegramWebApp {
   initDataUnsafe: Record<string, unknown>
   ready: () => void
   expand: () => void
+  setHeaderColor?: (color: string) => void
+  setBackgroundColor?: (color: string) => void
   colorScheme: 'light' | 'dark'
 }
 
@@ -26,6 +28,9 @@ export function initTelegramApp(): void {
   if (webApp) {
     webApp.ready()
     webApp.expand()
+    // The app is white like bigunder.ru, whatever theme Telegram itself is in.
+    webApp.setHeaderColor?.('#ffffff')
+    webApp.setBackgroundColor?.('#ffffff')
   }
 }
 
