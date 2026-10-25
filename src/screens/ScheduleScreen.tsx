@@ -117,7 +117,7 @@ export function ScheduleScreen() {
                 <li key={event.id} className={`slist__row${isToday ? ' is-today' : ''}${isOpen ? ' is-open' : ''}`}>
                   <button type="button" className="slist__line" onClick={() => setOpenId(isOpen ? null : event.id)}>
                     <span className="slist__d">
-                      {weekday(when)} {dayMonth(when)}
+                      {isToday ? 'СЕГОДНЯ' : `${weekday(when)} ${dayMonth(when)}`}
                       <br />
                       {time(when)}
                     </span>

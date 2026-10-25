@@ -259,19 +259,13 @@ button {
   -webkit-line-clamp: 2;
 }
 
-/* The nearest show under the cover: one row of the schedule list (see
-   .slist), a little smaller to fit the screen. */
+/* The nearest show under the cover: one row of the schedule list (.slist). */
 .next-show {
   border-top: 1px solid var(--color-text);
 }
 
 .next-show .slist__line {
   cursor: default;
-  padding: 8px 0;
-}
-
-.next-show .slist__n {
-  font-size: min(8.5vw, 5vh);
 }
 
 .radio-screen__meta-row {
@@ -1598,7 +1592,7 @@ button {
   align-items: baseline;
   gap: 8px;
   width: 100%;
-  padding: 10px 0;
+  padding: 8px 0;
   margin: 0;
   background: none;
   border: 0;
@@ -1621,7 +1615,7 @@ button {
 
 .slist__n {
   font-weight: 800;
-  font-size: min(10vw, 6vh);
+  font-size: min(8.5vw, 5vh);
   letter-spacing: -0.055em;
   line-height: 0.86;
   text-transform: uppercase;
