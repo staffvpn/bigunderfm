@@ -13,6 +13,8 @@ const MAX_COVER_BYTES = 5 * 1024 * 1024
 const MAX_EVENT_IMAGE_BYTES = 5 * 1024 * 1024
 const DEFAULT_SHOW_NAME = 'LOCAL SELECTS'
 const SAMPLE_RETENTION_DAYS = 90
+const PLAY_HISTORY_KEEP = 100
+const PLAY_HISTORY_SHOWN = 15
 // Telegram allows ~30 msg/s; also keeps one request under the Free plan's subrequest cap.
 const NOTIFY_CHUNK = 40
 const NOTIFY_MAX_LENGTH = 1000
@@ -639,6 +641,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
   if (m === 'GET' && path === '/api/show-name') return handleShowName(env)
   if (m === 'GET' && path === '/api/events') return handleListEvents(env)
   if (m === 'GET' && path === '/api/up-next') return handleUpNext(env, ctx)
+  if (m === 'GET' && path === '/api/history') return handleHistory(env, ctx)
   const remind = path.match(/^\/api\/events\/([0-9a-f-]{36})\/remind$/)
   if (remind && m === 'POST') {
     const auth = await requireUser(req, env)
@@ -762,17 +765,44 @@ async function sendDueReminders(env: Env): Promise<void> {
   }
 }
 
+/** Adds the track on air to play_history when it differs from the last one. */
+async function recordPlayed(env: Env, title: string): Promise<void> {
+  const last = await env.DB.prepare('select id, title from play_history order by id desc limit 1').first<{ id: number; title: string }>()
+  if (last?.title === title) return
+  const res = await env.DB.prepare('insert into play_history (title, played_at) values (?, ?)').bind(title, nowIso()).run()
+  const id = Number(res.meta.last_row_id)
+  if (id > PLAY_HISTORY_KEEP) await env.DB.prepare('delete from play_history where id <= ?').bind(id - PLAY_HISTORY_KEEP).run()
+}
+
+/** The listeners' "что играло": the latest tracks, newest first. Cached for
+    half a minute, since it only changes when a track does. */
+async function handleHistory(env: Env, ctx: ExecutionContext): Promise<Response> {
+  const cacheKey = new Request('https://cache.bigunderfm/history')
+  const cached = await caches.default.match(cacheKey)
+  if (cached) return cached
+  const { results } = await env.DB.prepare('select title, played_at from play_history order by id desc limit ?')
+    .bind(PLAY_HISTORY_SHOWN)
+    .all<{ title: string; played_at: string }>()
+  const res = json({ items: results.map((r) => ({ title: r.title, playedAt: r.played_at })) })
+  res.headers.set('Cache-Control', 'public, max-age=30')
+  ctx.waitUntil(caches.default.put(cacheKey, res.clone()))
+  return res
+}
+
 async function sampleListeners(env: Env): Promise<void> {
   let listeners: number
+  let title: string
   try {
     const res = await fetch(env.ICECAST_STATUS_URL, { signal: AbortSignal.timeout(8000) })
     const source = ((await res.json()) as any)?.icestats?.source
     // No source = stream is down, which is not "0 listeners" — do not record it.
     if (!source) return
     listeners = Number(source.listeners ?? 0)
+    title = typeof source.title === 'string' ? source.title.trim() : ''
   } catch {
     return
   }
+  if (title) await recordPlayed(env, title)
   await env.DB.prepare('insert or replace into listener_samples (sampled_at, listeners) values (?, ?)').bind(nowIso(), listeners).run()
   // Housekeeping once an hour keeps the table small.
   if (new Date().getUTCMinutes() === 0) {

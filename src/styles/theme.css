@@ -46,10 +46,9 @@ button {
   background: var(--color-bg);
 }
 
+/* The chrome BIGUNDER plate from the site's front page. */
 .app-loading__logo {
-  width: min(50vw, 200px);
-  /* The logo file is white (it is also the lock-screen artwork); black on the white page. */
-  filter: invert(1);
+  width: min(78vw, 360px);
   animation: pulse 1.6s ease-in-out infinite;
 }
 
@@ -1395,42 +1394,202 @@ button {
   border-radius: 10px;
 }
 
+/* Page headings as on bigunder.ru ("эфир", "тусы"): one big heavy word in
+   lowercase with a small grey caption under it, instead of a black slab. */
+.schedule-screen h2.page-title,
+.radio-screen h2.page-title,
+.page-title {
+  display: block;
+  margin: 0;
+  padding: 0;
+  background: none;
+  color: var(--color-text);
+  border-radius: 0;
+  font-weight: 800;
+  font-size: 17vw;
+  letter-spacing: -0.055em;
+  line-height: 0.84;
+  text-transform: lowercase;
+}
+
+.page-sub {
+  display: inline-block;
+  margin-top: 10px;
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+/* Links as a list from the site: thin rules, big names, a small arrow. */
 .info-screen__links {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  border-top: 1px solid var(--color-text);
+}
+
+.info-screen__links li {
+  border-bottom: 1px solid var(--color-line);
 }
 
 .info-screen__link {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  background: var(--color-surface);
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 0;
   color: var(--color-text);
   text-decoration: none;
-  border-radius: 14px;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .info-screen__link:active {
-  opacity: 0.8;
-}
-
-.info-screen__link-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  flex-shrink: 0;
+  color: var(--color-muted);
 }
 
 .info-screen__link-name {
   font-weight: 800;
-  font-size: 15px;
+  font-size: min(9vw, 5.4vh);
+  letter-spacing: -0.055em;
+  line-height: 0.92;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+}
+
+.info-screen__link-arrow {
+  font-size: 15px;
+  line-height: 1;
+  color: var(--color-muted);
+}
+
+/* "Что играло": the link under the next track, and the sheet it opens. */
+.played__open {
+  align-self: flex-start;
+  margin-top: 8px;
+  padding: 0 0 2px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  border-radius: 0;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.played {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(18, 18, 18, 0.28);
+  animation: played-fade 0.25s ease-out;
+  /* It sits inside the next-track label; don't inherit its small caps. */
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  font-size: 16px;
+}
+
+.played__sheet {
+  width: 100%;
+  max-height: 78vh;
+  overflow-y: auto;
+  padding: 20px 20px calc(24px + env(safe-area-inset-bottom, 0px));
+  background: var(--color-bg);
+  border-radius: 22px 22px 0 0;
+  animation: played-rise 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes played-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes played-rise {
+  from {
+    transform: translateY(40%);
+  }
+}
+
+.played__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.played h2.played__title.page-title {
+  font-size: 9vw;
+}
+
+.played__close {
+  padding: 0 0 2px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.played__empty {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.played__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--color-text);
+}
+
+.played__list li {
+  display: grid;
+  grid-template-columns: 4.6em 1fr;
+  align-items: baseline;
+  gap: 6px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-line);
+  font-size: 10px;
+  color: var(--color-muted);
+}
+
+.played__list li.is-now {
+  color: var(--color-text);
+}
+
+.played__time {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.played__track {
+  font-size: 16px;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.played__track b {
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+}
+
+.played__track i {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
 }
 
 .schedule-screen {

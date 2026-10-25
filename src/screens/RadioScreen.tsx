@@ -7,6 +7,7 @@ import { EventTicker } from '../components/EventTicker'
 import { NextShowCard } from '../components/NextShowCard'
 import { ChromePendant } from '../components/ChromePendant'
 import { HeartReactions } from '../components/HeartReactions'
+import { PlayedHistory } from '../components/PlayedHistory'
 
 // Real, always-on broadcast — Icecast (distribution) + Liquidsoap
 // (scheduling/encoding) running on a dedicated VPS, streaming the shared
@@ -398,6 +399,7 @@ export function RadioScreen() {
                 {nextEntry.track.artist} — {nextEntry.track.title}
               </span>
             )}
+            <PlayedHistory />
           </div>
           {/* The chrome plate from bigunder.ru, in place of the old looping
               graffiti clip. */}

@@ -9,6 +9,7 @@ import { AdminSchedule } from './screens/AdminSchedule'
 import { InfoScreen } from './screens/InfoScreen'
 import { ScheduleScreen } from './screens/ScheduleScreen'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import pendant from './assets/pendant/pendant-front.webp'
 
 type Tab = 'radio' | 'library' | 'controls' | 'info' | 'schedule'
 
@@ -30,7 +31,7 @@ export default function App() {
   if (!ready) {
     return (
       <div className="app-loading">
-        <img src="/logo.png" alt="BIGUNDER FM" className="app-loading__logo" />
+        <img src={pendant} alt="BIGUNDER FM" className="app-loading__logo" />
       </div>
     )
   }

@@ -72,7 +72,10 @@ export function ScheduleScreen() {
           <span className="radio-screen__station">BIGUNDER FM</span>
         </div>
 
-        <h2>SCHEDULE</h2>
+        <div>
+          <h2 className="page-title">шоу</h2>
+          <span className="page-sub">Расписание эфиров</span>
+        </div>
 
         <div className="schedule-tabs" role="tablist">
           <button
