@@ -13,12 +13,13 @@
   --font-serif: 'Playfair Display', 'Didot', 'Bodoni 72', Georgia, serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
   --color-line: #e7e7e4;
-  /* Embossed controls: raised from the paper, icons pressed into it. */
-  --emboss-face: linear-gradient(145deg, #ffffff 0%, #f1f1ee 100%);
-  --emboss-raise: 6px 8px 16px rgba(0, 0, 0, 0.13), -4px -4px 10px rgba(255, 255, 255, 0.9), inset 1px 1px 0 rgba(255, 255, 255, 0.9), inset -1px -1px 1px rgba(0, 0, 0, 0.05);
-  --emboss-pressed: inset 4px 5px 10px rgba(0, 0, 0, 0.14), inset -3px -3px 8px rgba(255, 255, 255, 0.95);
-  --emboss-ink: #c4c4bf;
-  --emboss-cut: drop-shadow(1px 1px 0 rgba(255, 255, 255, 1)) drop-shadow(-1px -1px 0 rgba(0, 0, 0, 0.28));
+  /* Debossed controls: pressed into the paper, icons pressed in further;
+     a tap pushes them deeper. */
+  --deboss-face: linear-gradient(145deg, #e9e9e6 0%, #f8f8f6 100%);
+  --deboss-rest: inset 4px 5px 10px rgba(0, 0, 0, 0.13), inset -4px -4px 9px rgba(255, 255, 255, 1), 0 1px 0 rgba(255, 255, 255, 0.9);
+  --deboss-pressed: inset 7px 8px 15px rgba(0, 0, 0, 0.2), inset -3px -3px 7px rgba(255, 255, 255, 1), 0 1px 0 rgba(255, 255, 255, 0.9);
+  --deboss-ink: #c4c4bf;
+  --deboss-cut: drop-shadow(1px 1px 0 rgba(255, 255, 255, 1)) drop-shadow(-1px -1px 0 rgba(0, 0, 0, 0.28));
 }
 
 * {
@@ -510,22 +511,22 @@ button {
   justify-content: center;
   border-radius: 50%;
   border: none;
-  background: var(--emboss-face);
-  box-shadow: var(--emboss-raise);
-  color: var(--emboss-ink);
+  background: var(--deboss-face);
+  box-shadow: var(--deboss-rest);
+  color: var(--deboss-ink);
   cursor: pointer;
   transition: box-shadow 0.15s ease;
 }
 
 .radio-screen__play:active,
 .hearts__button:active {
-  box-shadow: var(--emboss-pressed);
+  box-shadow: var(--deboss-pressed);
 }
 
-/* The icon is pressed into the button: light edge below-right, shadow above-left. */
+/* The icon is pressed in too: light edge below-right, shadow above-left. */
 .radio-screen__play > span,
 .hearts__button svg {
-  filter: var(--emboss-cut);
+  filter: var(--deboss-cut);
 }
 
 .hearts {
@@ -544,9 +545,9 @@ button {
   justify-content: center;
   border-radius: 50%;
   border: none;
-  background: var(--emboss-face);
-  box-shadow: var(--emboss-raise);
-  color: var(--emboss-ink);
+  background: var(--deboss-face);
+  box-shadow: var(--deboss-rest);
+  color: var(--deboss-ink);
   transition: box-shadow 0.15s ease;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;

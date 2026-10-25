@@ -108,15 +108,11 @@ export function LiveBroadcast() {
 
       {isLive && (
         <div className="live-broadcast__call">
-          {call.peers.length === 0 ? (
-            <span>Других ведущих в эфире нет — когда кто-то выйдет, вы сразу услышите друг друга.</span>
-          ) : (
-            call.peers.map((p) => (
-              <span key={p.id} className={`live-broadcast__peer is-${p.state}`}>
-                {p.name} — {PEER_STATE_LABEL[p.state]}
-              </span>
-            ))
-          )}
+          {call.peers.map((p) => (
+            <span key={p.id} className={`live-broadcast__peer is-${p.state}`}>
+              {p.name} — {PEER_STATE_LABEL[p.state]}
+            </span>
+          ))}
           {call.needsTap && <button onClick={resumeCallAudio}>ВКЛЮЧИТЬ ЗВУК ВЕДУЩИХ</button>}
         </div>
       )}
@@ -133,15 +129,6 @@ export function LiveBroadcast() {
 
       <LevelSlider label="Громкость голосов" endpoint="/api/admin/voice-gain" min={50} max={600} step={10} fallback={250} />
       <LevelSlider label="Музыка под голосом" endpoint="/api/admin/music-volume" min={0} max={100} step={5} fallback={20} />
-
-      <p className="admin-dashboard__show-name-status">
-        Ведущие в эфире слышат друг друга сразу, как по телефону, — обязательно в наушниках, иначе голоса
-        попадут в микрофон и в эфир. Слушатели слышат вас с задержкой 5–10 секунд. Сам эфир на этом телефоне не
-        включайте — будете слышать себя с опозданием. Музыка затихает до уровня на ползунке, пока кто-то в эфире, и
-        возвращается, когда все закончили. Оба ползунка можно двигать прямо во время эфира, настройки общие для всех
-        админов. Не сворачивайте Telegram и не блокируйте экран, иначе эфир прервётся. Одновременно — до трёх
-        ведущих.
-      </p>
     </div>
   )
 }

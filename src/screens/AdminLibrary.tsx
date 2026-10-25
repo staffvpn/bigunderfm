@@ -373,10 +373,7 @@ export function AdminLibrary() {
       <div className="admin-library__queue">
         <span className="admin-library__queue-title">ОЧЕРЕДЬ</span>
         {queue.length === 0 ? (
-          <p className="admin-library__rotation-summary">
-            Пусто — эфир идёт по плейлисту. Найди трек и нажми «В очередь»: он сыграет сразу после текущего, а
-            потом плейлист продолжится с того же места.
-          </p>
+          <p className="admin-library__rotation-summary">Пусто</p>
         ) : (
           <ul className="admin-library__queue-list">
             {queue.map((q, i) => (
@@ -404,7 +401,7 @@ export function AdminLibrary() {
       />
       {searching && (
         <p className="admin-library__rotation-summary">
-          Найдено: {visibleEntries.length}. Порядковый номер — место в плейлисте.
+          Найдено: {visibleEntries.length}
         </p>
       )}
 
