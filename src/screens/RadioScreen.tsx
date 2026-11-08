@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { STREAM_HOST, STREAM_URL, decodeHtmlEntities } from '../lib/radioServer'
+import { STREAM_HOST, STREAM_URL, decodeHtmlEntities, isStreamServerUp, mediaUrl } from '../lib/radioServer'
+import { computeCurrentPosition } from '../lib/radioClock'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
-import { fetchPlaylist, fetchUpNextFilePath, type PlaylistEntry } from '../lib/tracks'
+import { fetchPlaylist, fetchUpNextFilePath, toPlaylistTracks, type PlaylistEntry } from '../lib/tracks'
 import { OnAirBadge } from '../components/OnAirBadge'
 import { EventTicker } from '../components/EventTicker'
 import { NextShowCard } from '../components/NextShowCard'
@@ -25,6 +26,16 @@ import { PlayedHistory } from '../components/PlayedHistory'
 // Encrypt's HTTP-01 challenge without owning a real domain.
 
 const BACKGROUND_ROTATE_MS = 6 * 60 * 60 * 1000
+
+// Fallback broadcast, used only while the VPS is unreachable (it lives with a
+// single hosting provider, and when that provider went down the whole radio
+// went silent with it). The library itself is in R2 on Cloudflare, so the app
+// plays it straight from there: every listener computes the same position
+// from this fixed anchor and the playlist durations, so everyone still hears
+// roughly the same track at the same moment. No live hosts, no admin queue,
+// no skip in this mode - just the rotation. As soon as a track ends and the
+// VPS answers again, playback goes back to the real stream.
+const FALLBACK_ANCHOR = '2026-01-01T00:00:00Z'
 
 function normalize(s: string): string {
   return s.trim().toLowerCase()
@@ -78,14 +89,70 @@ export function RadioScreen() {
   // either invocation yields, so the second call sees it immediately.
   const connectingRef = useRef(false)
 
+  // R2 fallback state (see FALLBACK_ANCHOR). Refs mirror state for the
+  // mount-once event handlers, same reason as isPausedRef.
+  const [fallback, setFallback] = useState(false)
+  const fallbackRef = useRef(false)
+  const [fallbackIndex, setFallbackIndex] = useState(-1)
+  const fallbackIndexRef = useRef(-1)
+  const fallbackErrorsRef = useRef(0)
+  const pendingSeekRef = useRef<number | null>(null)
+  const entriesRef = useRef<PlaylistEntry[]>([])
+
+  function enterFallback() {
+    fallbackRef.current = true
+    setFallback(true)
+  }
+
+  function playFallbackEntry(index: number, offsetSeconds: number): boolean {
+    const audio = audioRef.current
+    const list = entriesRef.current
+    if (!audio || list.length === 0) return false
+    const i = ((index % list.length) + list.length) % list.length
+    const entry = list[i]
+    fallbackIndexRef.current = i
+    setFallbackIndex(i)
+    setNowPlaying({ artist: entry.track.artist, title: entry.track.title })
+    pendingSeekRef.current = offsetSeconds > 2 ? offsetSeconds : null
+    connectingRef.current = true
+    setIsBuffering(true)
+    audio.src = mediaUrl(entry.track.filePath)
+    audio.play().catch(() => {})
+    return true
+  }
+
+  // Joins the shared fallback timeline wherever it currently is.
+  function tuneInFallback(): boolean {
+    const list = entriesRef.current
+    const pos = computeCurrentPosition(
+      toPlaylistTracks(list),
+      { anchorAt: FALLBACK_ANCHOR, isPlaying: true, pausedOffsetSeconds: null },
+      new Date(),
+    )
+    if (!pos) return false
+    return playFallbackEntry(pos.trackIndex, pos.offsetSeconds)
+  }
+
   useEffect(() => {
-    fetchPlaylist().then(setEntries)
+    fetchPlaylist().then((list) => {
+      entriesRef.current = list
+      setEntries(list)
+    })
+
+    // Find out up front whether the VPS is reachable at all. A dead server
+    // can leave a connection attempt hanging for a long time before the
+    // audio element reports an error, so without this the first tap would
+    // just sit on "Подключение...".
+    isStreamServerUp().then((up) => {
+      if (!up) enterFallback()
+    })
 
     // Icecast exposes the currently-playing title itself — poll it instead
     // of trying to derive "now playing" from playlist position, since the
     // server (Liquidsoap) is the only thing that actually knows where in
     // the broadcast we are.
     async function pollNowPlaying() {
+      if (fallbackRef.current) return
       try {
         const resp = await fetch(`${STREAM_HOST}/status-json.xsl`)
         const data = await resp.json()
@@ -149,6 +216,10 @@ export function RadioScreen() {
       // stray parallel connection) each independently calling this.
       if (reconnectTimerRef.current || connectingRef.current) return
       if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+        // The VPS is gone - keep the music going from R2 instead.
+        enterFallback()
+        reconnectAttemptsRef.current = 0
+        if (tuneInFallback()) return
         setIsBuffering(false)
         setIsPaused(true)
         setConnectError(true)
@@ -171,18 +242,65 @@ export function RadioScreen() {
       setIsBuffering(false)
       setConnectError(false)
       reconnectAttemptsRef.current = 0
+      fallbackErrorsRef.current = 0
+    }
+    function handleLoadedMetadata() {
+      const t = pendingSeekRef.current
+      pendingSeekRef.current = null
+      if (!audio || t == null) return
+      if (!Number.isFinite(audio.duration) || t < audio.duration - 5) {
+        try {
+          audio.currentTime = t
+        } catch {
+          // Seeking is a nicety (keeps listeners roughly in sync); starting
+          // the track from the top is fine too.
+        }
+      }
     }
     function handleAudioError() {
       connectingRef.current = false
+      if (fallbackRef.current) {
+        if (isPausedRef.current) return
+        // A broken or missing file - move on to the next track rather than
+        // stopping, but give up if nothing in the library will play.
+        fallbackErrorsRef.current += 1
+        if (fallbackErrorsRef.current > Math.min(entriesRef.current.length, 5)) {
+          setIsBuffering(false)
+          setIsPaused(true)
+          setConnectError(true)
+          return
+        }
+        setTimeout(() => {
+          if (!isPausedRef.current) playFallbackEntry(fallbackIndexRef.current + 1, 0)
+        }, 1000)
+        return
+      }
       scheduleReconnect()
+    }
+    async function handleEnded() {
+      if (!fallbackRef.current) {
+        handleAudioError()
+        return
+      }
+      if (isPausedRef.current) return
+      // Between tracks is the one moment switching back is seamless.
+      if (await isStreamServerUp(3000)) {
+        fallbackRef.current = false
+        setFallback(false)
+        reconnectAttemptsRef.current = 0
+        reconnect()
+        return
+      }
+      playFallbackEntry(fallbackIndexRef.current + 1, 0)
     }
     // A live stream "ending" is never intentional on the server side —
     // treat it exactly like a dropped connection.
     audio?.addEventListener('waiting', handleWaiting)
     audio?.addEventListener('stalled', handleWaiting)
     audio?.addEventListener('playing', handlePlaying)
+    audio?.addEventListener('loadedmetadata', handleLoadedMetadata)
     audio?.addEventListener('error', handleAudioError)
-    audio?.addEventListener('ended', handleAudioError)
+    audio?.addEventListener('ended', handleEnded)
 
     return () => {
       clearInterval(nowPlayingTimer)
@@ -192,8 +310,9 @@ export function RadioScreen() {
       audio?.removeEventListener('waiting', handleWaiting)
       audio?.removeEventListener('stalled', handleWaiting)
       audio?.removeEventListener('playing', handlePlaying)
+      audio?.removeEventListener('loadedmetadata', handleLoadedMetadata)
       audio?.removeEventListener('error', handleAudioError)
-      audio?.removeEventListener('ended', handleAudioError)
+      audio?.removeEventListener('ended', handleEnded)
       audio?.pause()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -244,6 +363,17 @@ export function RadioScreen() {
     // Cleared by the 'playing' handler once sound actually starts, or by
     // 'error' if the connection fails outright.
     setIsBuffering(true)
+
+    if (fallbackRef.current) {
+      fallbackErrorsRef.current = 0
+      if (!tuneInFallback()) {
+        connectingRef.current = false
+        setIsBuffering(false)
+        setIsPaused(true)
+        setConnectError(true)
+      }
+      return
+    }
 
     // A live stream has no "resume from where I left off" — reconnecting
     // always joins wherever the broadcast currently is, exactly like tuning
@@ -315,13 +445,14 @@ export function RadioScreen() {
   // duration. Best-effort: if a track's ID3-derived title/artist doesn't
   // match the DB row closely enough, this just quietly shows nothing
   // rather than guessing wrong.
-  const currentEntry = nowPlaying
+  const streamEntry = nowPlaying
     ? entries.find((e) => {
         const dbCombined = normalize(`${e.track.artist} - ${e.track.title}`)
         const liveCombined = normalize(`${nowPlaying.artist} - ${nowPlaying.title}`)
         return dbCombined === liveCombined || normalize(e.track.title) === normalize(nowPlaying.title)
       })
     : undefined
+  const currentEntry = fallback && fallbackIndex >= 0 ? entries[fallbackIndex] : streamEntry
   const currentIndex = currentEntry ? entries.findIndex((e) => e.track.id === currentEntry.track.id) : -1
 
   // JINGLE 2 is deliberately NOT one of `entries` (it's not a numbered
@@ -340,8 +471,9 @@ export function RadioScreen() {
   // the playlist continues. Ignored if it still names the current track (the
   // answer is cached for a few seconds and can lag a track change).
   const serverNextEntry = upNextPath ? entries.find((e) => e.track.filePath === upNextPath) : undefined
-  const nextEntry =
-    serverNextEntry && serverNextEntry.track.id !== currentEntry?.track.id ? serverNextEntry : playlistNextEntry
+  const nextEntry = fallback
+    ? playlistNextEntry
+    : serverNextEntry && serverNextEntry.track.id !== currentEntry?.track.id ? serverNextEntry : playlistNextEntry
 
   const showConnecting = userStarted && !isPaused && isBuffering
 

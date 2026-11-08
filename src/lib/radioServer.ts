@@ -5,6 +5,35 @@
 export const STREAM_HOST = 'https://159-194-234-135.sslip.io'
 export const STREAM_URL = `${STREAM_HOST}/radio`
 
+// Public R2 bucket the library lives in (same base the Worker hands the VPS).
+// Used directly by the fallback player when the VPS is unreachable.
+export const MEDIA_BASE = 'https://pub-4940e64168824086a7fd4cf46cf01d65.r2.dev'
+
+export function mediaUrl(filePath: string): string {
+  return `${MEDIA_BASE}/${filePath}`
+}
+
+/**
+ * True if the VPS answers its status page within `timeoutMs`. Used to decide
+ * between the live Icecast stream and the R2 fallback player — the VPS sits
+ * with a single hosting provider, and when that provider goes down the whole
+ * radio used to go silent with it.
+ */
+export async function isStreamServerUp(timeoutMs = 6000): Promise<boolean> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const resp = await fetch(`${STREAM_HOST}/status-json.xsl`, { signal: ctrl.signal, cache: 'no-store' })
+    if (!resp.ok) return false
+    const data = await resp.json()
+    return Boolean(data?.icestats?.source)
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // Icecast's status-json.xsl escapes non-ASCII in text fields as numeric
 // HTML entities (e.g. "Б" -> "&#1041;") — that's XML-safe encoding, not
 // actual HTML, so it arrives as literal "&#1041;" text rather than being
