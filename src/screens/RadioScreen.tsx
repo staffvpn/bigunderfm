@@ -36,6 +36,28 @@ const BACKGROUND_ROTATE_MS = 6 * 60 * 60 * 1000
 // no skip in this mode - just the rotation. As soon as a track ends and the
 // VPS answers again, playback goes back to the real stream.
 const FALLBACK_ANCHOR = '2026-01-01T00:00:00Z'
+const STREAM_CONNECT_TIMEOUT_MS = 5000
+
+// Remembers for a while that the VPS was down, so reopening the app goes
+// straight to the fallback instead of first trying the dead server again.
+const VPS_DOWN_KEY = 'bfm_vps_down_at'
+const VPS_DOWN_TTL_MS = 15 * 60 * 1000
+function rememberVpsDown(down: boolean) {
+  try {
+    if (down) localStorage.setItem(VPS_DOWN_KEY, String(Date.now()))
+    else localStorage.removeItem(VPS_DOWN_KEY)
+  } catch {
+    // storage unavailable - not important
+  }
+}
+function vpsRecentlyDown(): boolean {
+  try {
+    const at = Number(localStorage.getItem(VPS_DOWN_KEY))
+    return Number.isFinite(at) && at > 0 && Date.now() - at < VPS_DOWN_TTL_MS
+  } catch {
+    return false
+  }
+}
 
 function normalize(s: string): string {
   return s.trim().toLowerCase()
@@ -104,6 +126,35 @@ export function RadioScreen() {
     setFallback(true)
   }
 
+  // If the live stream hasn't produced sound within a few seconds of a tap,
+  // assume the VPS is down and switch to the R2 fallback instead of leaving
+  // the listener on "Подключение..." while a dead connection times out.
+  const streamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const streamPlayedRef = useRef(false)
+  function clearStreamWatchdog() {
+    if (streamWatchdogRef.current) clearTimeout(streamWatchdogRef.current)
+    streamWatchdogRef.current = null
+  }
+  function armStreamWatchdog() {
+    clearStreamWatchdog()
+    streamPlayedRef.current = false
+    streamWatchdogRef.current = setTimeout(() => {
+      streamWatchdogRef.current = null
+      if (fallbackRef.current || isPausedRef.current || streamPlayedRef.current) return
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+      reconnectAttemptsRef.current = 0
+      rememberVpsDown(true)
+      enterFallback()
+      if (!tuneInFallback()) {
+        connectingRef.current = false
+        setIsBuffering(false)
+        setIsPaused(true)
+        setConnectError(true)
+      }
+    }, STREAM_CONNECT_TIMEOUT_MS)
+  }
+
   function playFallbackEntry(index: number, offsetSeconds: number): boolean {
     const audio = audioRef.current
     const list = entriesRef.current
@@ -143,8 +194,22 @@ export function RadioScreen() {
     // can leave a connection attempt hanging for a long time before the
     // audio element reports an error, so without this the first tap would
     // just sit on "Подключение...".
-    Promise.all([isStreamServerUp(), playlistLoaded]).then(([up]) => {
-      if (up || fallbackRef.current) return
+    if (vpsRecentlyDown()) enterFallback()
+    Promise.all([isStreamServerUp(4000), playlistLoaded]).then(([up]) => {
+      rememberVpsDown(!up)
+      if (up) {
+        // Came back while the app was closed - use the real stream again,
+        // unless the fallback is already playing (it switches at track end).
+        if (fallbackRef.current && isPausedRef.current) {
+          fallbackRef.current = false
+          setFallback(false)
+          setFallbackIndex(-1)
+          fallbackIndexRef.current = -1
+          setNowPlaying(null)
+          pollNowPlaying()
+        }
+        return
+      }
       enterFallback()
       // Show what's on the shared fallback timeline right away, before play.
       const pos = computeCurrentPosition(
@@ -210,6 +275,7 @@ export function RadioScreen() {
     function reconnect() {
       if (!audio) return
       connectingRef.current = true
+      armStreamWatchdog()
       audio.src = STREAM_URL
       audio.play().catch(() => {})
     }
@@ -251,6 +317,8 @@ export function RadioScreen() {
       setIsBuffering(true)
     }
     function handlePlaying() {
+      streamPlayedRef.current = true
+      clearStreamWatchdog()
       connectingRef.current = false
       setIsBuffering(false)
       setConnectError(false)
@@ -298,6 +366,7 @@ export function RadioScreen() {
       if (isPausedRef.current) return
       // Between tracks is the one moment switching back is seamless.
       if (await isStreamServerUp(3000)) {
+        rememberVpsDown(false)
         fallbackRef.current = false
         setFallback(false)
         reconnectAttemptsRef.current = 0
@@ -320,6 +389,7 @@ export function RadioScreen() {
       clearInterval(backgroundTimer)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      clearStreamWatchdog()
       audio?.removeEventListener('waiting', handleWaiting)
       audio?.removeEventListener('stalled', handleWaiting)
       audio?.removeEventListener('playing', handlePlaying)
@@ -344,6 +414,7 @@ export function RadioScreen() {
       // drop-triggered retry landing a second after the user paused would
       // otherwise silently start the stream back up underneath them.
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      clearStreamWatchdog()
       reconnectAttemptsRef.current = 0
       connectingRef.current = false
       setIsBuffering(false)
@@ -392,6 +463,7 @@ export function RadioScreen() {
     // always joins wherever the broadcast currently is, exactly like tuning
     // in a real radio station. Reassigning `src` forces a fresh connection
     // rather than resuming a stale/stalled buffer from before a pause.
+    armStreamWatchdog()
     if (audio.src !== STREAM_URL) {
       audio.src = STREAM_URL
     } else {
