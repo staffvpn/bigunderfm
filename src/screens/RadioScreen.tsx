@@ -134,7 +134,7 @@ export function RadioScreen() {
   }
 
   useEffect(() => {
-    fetchPlaylist().then((list) => {
+    const playlistLoaded = fetchPlaylist().then((list) => {
       entriesRef.current = list
       setEntries(list)
     })
@@ -143,8 +143,21 @@ export function RadioScreen() {
     // can leave a connection attempt hanging for a long time before the
     // audio element reports an error, so without this the first tap would
     // just sit on "Подключение...".
-    isStreamServerUp().then((up) => {
-      if (!up) enterFallback()
+    Promise.all([isStreamServerUp(), playlistLoaded]).then(([up]) => {
+      if (up || fallbackRef.current) return
+      enterFallback()
+      // Show what's on the shared fallback timeline right away, before play.
+      const pos = computeCurrentPosition(
+        toPlaylistTracks(entriesRef.current),
+        { anchorAt: FALLBACK_ANCHOR, isPlaying: true, pausedOffsetSeconds: null },
+        new Date(),
+      )
+      const entry = pos ? entriesRef.current[pos.trackIndex] : undefined
+      if (entry && isPausedRef.current) {
+        fallbackIndexRef.current = pos!.trackIndex
+        setFallbackIndex(pos!.trackIndex)
+        setNowPlaying({ artist: entry.track.artist, title: entry.track.title })
+      }
     })
 
     // Icecast exposes the currently-playing title itself — poll it instead
