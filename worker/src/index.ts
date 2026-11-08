@@ -685,6 +685,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (m === 'PUT' && path === '/api/admin/order') return handleOrder(req, env)
     if (m === 'PUT' && path === '/api/admin/show-name') return handleSetShowName(req, env)
     if (m === 'GET' && path === '/api/admin/stats') return handleStats(env)
+    if (m === 'GET' && path === '/api/admin/fallback-status') return handleFallbackStatus(env)
     // Cheap (no database): the dashboard polls this every few seconds.
     if (m === 'POST' && path === '/api/admin/skip') return handleSkip(env)
     if (m === 'GET' && path === '/api/admin/live') {
@@ -789,18 +790,68 @@ async function handleHistory(env: Env, ctx: ExecutionContext): Promise<Response>
   return res
 }
 
+// ---------- fallback broadcast (VPS down) ----------
+// While the VPS is unreachable the app plays the library straight from R2 on
+// a shared clock (FALLBACK_ANCHOR in src/screens/RadioScreen.tsx — keep the
+// two in sync). The same calculation here gives admins "now playing" and
+// keeps "что играло" and the listener peaks going in that mode.
+const FALLBACK_ANCHOR_MS = Date.parse('2026-01-01T00:00:00Z')
+
+async function fallbackNowPlaying(env: Env): Promise<{ artist: string; title: string; startedAt: string } | null> {
+  const rows = await listPlaylist(env, false)
+  const total = rows.reduce((sum, r) => sum + r.duration_seconds, 0)
+  if (rows.length === 0 || total <= 0) return null
+  const elapsed = ((((Date.now() - FALLBACK_ANCHOR_MS) / 1000) % total) + total) % total
+  let acc = 0
+  for (const r of rows) {
+    if (elapsed < acc + r.duration_seconds) {
+      return { artist: r.artist, title: r.title, startedAt: new Date(Date.now() - (elapsed - acc) * 1000).toISOString() }
+    }
+    acc += r.duration_seconds
+  }
+  const last = rows[rows.length - 1]
+  return { artist: last.artist, title: last.title, startedAt: nowIso() }
+}
+
+/** People with the app open right now (Presence durable object). */
+async function appOpenCount(env: Env): Promise<number> {
+  const stub = env.PRESENCE.get(env.PRESENCE.idFromName('room'))
+  const res = await stub.fetch('https://presence/count')
+  return Number(((await res.json()) as { count?: number }).count ?? 0)
+}
+
+async function handleFallbackStatus(env: Env): Promise<Response> {
+  const [now, appOpen] = await Promise.all([fallbackNowPlaying(env), appOpenCount(env)])
+  return json({
+    appOpen,
+    title: now ? `${now.artist} - ${now.title}` : null,
+    trackStartedAt: now?.startedAt ?? null,
+  })
+}
+
 async function sampleListeners(env: Env): Promise<void> {
   let listeners: number
   let title: string
+  let source: any = null
   try {
     const res = await fetch(env.ICECAST_STATUS_URL, { signal: AbortSignal.timeout(8000) })
-    const source = ((await res.json()) as any)?.icestats?.source
-    // No source = stream is down, which is not "0 listeners" — do not record it.
-    if (!source) return
+    source = ((await res.json()) as any)?.icestats?.source
+  } catch {
+    source = null
+  }
+  if (source) {
     listeners = Number(source.listeners ?? 0)
     title = typeof source.title === 'string' ? source.title.trim() : ''
-  } catch {
-    return
+  } else {
+    // VPS down: the app is on the R2 fallback. Icecast can't count listeners
+    // then, so the number of people with the app open stands in for it.
+    try {
+      const now = await fallbackNowPlaying(env)
+      title = now ? `${now.artist} - ${now.title}` : ''
+      listeners = await appOpenCount(env)
+    } catch {
+      return
+    }
   }
   if (title) await recordPlayed(env, title)
   await env.DB.prepare('insert or replace into listener_samples (sampled_at, listeners) values (?, ?)').bind(nowIso(), listeners).run()

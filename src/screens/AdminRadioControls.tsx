@@ -21,6 +21,9 @@ const FAILURES_BEFORE_WARNING = 3
 export function AdminRadioControls() {
   const [status, setStatus] = useState<IcecastStatus | null>(null)
   const [serverDown, setServerDown] = useState(false)
+  // While the VPS is down the app plays from R2 (see RadioScreen); the
+  // Worker reports what that fallback is playing and how many have the app open.
+  const [fallbackStatus, setFallbackStatus] = useState<{ appOpen: number; title: string | null } | null>(null)
   const [skipping, setSkipping] = useState(false)
   const [skipError, setSkipError] = useState<string | null>(null)
   const failureStreakRef = useRef(0)
@@ -40,10 +43,17 @@ export function AdminRadioControls() {
         failureStreakRef.current = 0
         setStatus(result)
         setServerDown(false)
+        setFallbackStatus(null)
       } else {
         failureStreakRef.current += 1
         if (failureStreakRef.current >= FAILURES_BEFORE_WARNING) {
           setServerDown(true)
+        }
+        try {
+          setFallbackStatus(await api<{ appOpen: number; title: string | null }>('/api/admin/fallback-status'))
+          setStatus(null)
+        } catch {
+          // keep whatever was shown last
         }
       }
     }
@@ -108,7 +118,10 @@ export function AdminRadioControls() {
       <h2>УПРАВЛЕНИЕ</h2>
 
       {serverDown && (
-        <p className="admin-dashboard__warning">⚠ Сервер вещания не отвечает — эфир может быть прерван.</p>
+        <p className="admin-dashboard__warning">
+          ⚠ Сервер вещания не отвечает. Радио играет в запасном режиме прямо из Cloudflare: музыка идёт, но выход
+          ведущих в эфир и переключение треков сейчас не работают.
+        </p>
       )}
       {storageLow && (
         <p className="admin-dashboard__warning">
@@ -136,8 +149,8 @@ export function AdminRadioControls() {
 
       <div className="admin-dashboard__grid">
         <div className="admin-dashboard__tile">
-          <span className="admin-dashboard__tile-value">{status?.listeners ?? '—'}</span>
-          <span className="admin-dashboard__tile-label">Слушают поток</span>
+          <span className="admin-dashboard__tile-value">{status?.listeners ?? fallbackStatus?.appOpen ?? '—'}</span>
+          <span className="admin-dashboard__tile-label">{status ? 'Слушают поток' : fallbackStatus ? 'Открыли приложение' : 'Слушают поток'}</span>
         </div>
         <div className="admin-dashboard__tile">
           <span className="admin-dashboard__tile-value">{stats?.peaks.day ?? '—'}</span>
@@ -196,10 +209,10 @@ export function AdminRadioControls() {
 
       <div className="admin-dashboard__now-playing">
         <span className="admin-dashboard__now-playing-label">СЕЙЧАС ИГРАЕТ</span>
-        <span className="admin-dashboard__now-playing-title">{status?.title ?? '—'}</span>
+        <span className="admin-dashboard__now-playing-title">{status?.title ?? fallbackStatus?.title ?? '—'}</span>
       </div>
 
-      <button onClick={handleSkip} disabled={skipping}>
+      <button onClick={handleSkip} disabled={skipping || (!status && !!fallbackStatus)}>
         {skipping ? 'ПЕРЕКЛЮЧАЮ...' : 'СЛЕДУЮЩИЙ ТРЕК'}
       </button>
       {skipError && <p className="admin-radio-controls__error">{skipError}</p>}
