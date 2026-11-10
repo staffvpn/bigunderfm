@@ -532,15 +532,22 @@ async function handleSetTrackFolders(req: Request, env: Env, trackId: string): P
   return json({ ok: true, folderIds: ids })
 }
 
-/** Now / next / grid for the app. Cached a few seconds: every open app polls it. */
+/** Now / next / grid for the app. Cached a few seconds (every open app polls
+    it); the clock in the answer is always fresh, since the app sets its own
+    clock offset by it. */
 async function handleProgram(env: Env, ctx: ExecutionContext): Promise<Response> {
   const cacheKey = new Request('https://cache.bigunderfm/program')
   const cached = await caches.default.match(cacheKey)
-  if (cached) return cached
-  const res = json(await programView(env, Date.now()))
-  res.headers.set('Cache-Control', 'public, max-age=5')
-  ctx.waitUntil(caches.default.put(cacheKey, res.clone()))
-  return res
+  let view: Awaited<ReturnType<typeof programView>>
+  if (cached) {
+    view = await cached.json()
+  } else {
+    view = await programView(env, Date.now())
+    const store = json(view)
+    store.headers.set('Cache-Control', 'public, max-age=5')
+    ctx.waitUntil(caches.default.put(cacheKey, store))
+  }
+  return json({ ...view, now: nowIso() })
 }
 
 // ---------- play-next queue + live music level (Liquidsoap, through skip-bridge) ----------
