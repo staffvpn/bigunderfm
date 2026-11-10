@@ -4,6 +4,8 @@ import { signJwt, verifyJwt, type Claims } from './jwt'
 import { verifyInitData } from './telegramAuth'
 import { CORS_HEADERS, audioContentType, buildMediaKey, buildTrackKey, imageContentType, json, nowIso, safeEqual, sleep } from './util'
 
+import { airTitle, autoHitIds, feedVpsQueue, planAhead, programNow, programView, replanFuture, skipCurrent } from './program'
+
 export { Presence } from './presence'
 export { LiveRoom } from './liveRoom'
 
@@ -33,6 +35,9 @@ interface TrackRow {
   file_size_bytes: number
   is_enabled: number
   position: number
+  kind: string
+  is_hit: number
+  created_at: string
 }
 
 function toEntry(r: TrackRow) {
@@ -47,12 +52,15 @@ function toEntry(r: TrackRow) {
       durationSeconds: r.duration_seconds,
       fileSizeBytes: r.file_size_bytes,
       isEnabled: r.is_enabled === 1,
+      kind: r.kind === 'jingle' ? 'jingle' : 'track',
+      isHit: r.is_hit === 1,
+      createdAt: r.created_at,
     },
   }
 }
 
 const TRACK_SELECT = `select t.id, t.title, t.artist, t.file_path, t.cover_path, t.duration_seconds,
-  t.file_size_bytes, t.is_enabled, p.position
+  t.file_size_bytes, t.is_enabled, p.position, t.kind, t.is_hit, t.created_at
   from playlist_items p join tracks t on t.id = p.track_id`
 
 async function listPlaylist(env: Env, includeDisabled: boolean): Promise<TrackRow[]> {
@@ -170,8 +178,13 @@ async function handleUpload(req: Request, env: Env): Promise<Response> {
  * artist at upload time).
  */
 async function handleUpdateTrack(req: Request, env: Env, id: string): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { isEnabled?: boolean; title?: string; artist?: string } | null
-  if (!body || (body.isEnabled === undefined && body.title === undefined && body.artist === undefined)) {
+  const body = (await req.json().catch(() => null)) as
+    | { isEnabled?: boolean; title?: string; artist?: string; isHit?: boolean; kind?: string }
+    | null
+  if (
+    !body ||
+    (body.isEnabled === undefined && body.title === undefined && body.artist === undefined && body.isHit === undefined && body.kind === undefined)
+  ) {
     return json({ error: 'nothing to update' }, 400)
   }
 
@@ -195,11 +208,23 @@ async function handleUpdateTrack(req: Request, env: Env, id: string): Promise<Re
     values.push(String(body.artist).trim() || 'Unknown Artist')
   }
 
+  if (body.isHit !== undefined) {
+    sets.push('is_hit = ?')
+    values.push(body.isHit ? 1 : 0)
+  }
+  if (body.kind !== undefined) {
+    if (body.kind !== 'track' && body.kind !== 'jingle') return json({ error: 'kind must be track or jingle' }, 400)
+    sets.push('kind = ?')
+    values.push(body.kind)
+  }
+
   values.push(id)
   const { meta } = await env.DB.prepare(`update tracks set ${sets.join(', ')} where id = ?`)
     .bind(...values)
     .run()
   if (meta.changes === 0) return json({ error: 'not found' }, 404)
+  // A track taken off air must not stay in what is already planned.
+  if (body.isEnabled === false) await replanFuture(env, Date.now())
   return json({ ok: true })
 }
 
@@ -208,8 +233,10 @@ async function handleDelete(env: Env, id: string): Promise<Response> {
     .bind(id)
     .first<{ file_path: string; cover_path: string | null }>()
   if (!track) return json({ error: 'not found' }, 404)
-  // playlist_items rows go with it (ON DELETE CASCADE).
+  // playlist_items and folder_tracks rows go with it (ON DELETE CASCADE).
   await env.DB.prepare('delete from tracks where id = ?').bind(id).run()
+  await env.DB.prepare('delete from program where track_id = ? and starts_at > ?').bind(id, nowIso()).run()
+  await planAhead(env, Date.now(), true)
   const keys = [track.file_path, ...(track.cover_path ? [track.cover_path] : [])]
   await env.MEDIA.delete(keys)
   return json({ ok: true })
@@ -455,13 +482,65 @@ async function handleSkip(env: Env): Promise<Response> {
     const res = await fetch(`${env.SKIP_BRIDGE_URL}/skip`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${env.SKIP_BRIDGE_SECRET}` },
+      signal: AbortSignal.timeout(6000),
     })
-    const text = await res.text()
-    if (!res.ok) return json({ error: text || `skip bridge returned ${res.status}` }, 502)
-    return json({ ok: true })
-  } catch (err) {
-    return json({ error: (err as Error).message }, 502)
+    if (res.ok) return json({ ok: true })
+  } catch {
+    // VPS unreachable - skip on the planned timeline instead (below).
   }
+  // Without the VPS the app plays the planned timeline, so skipping means
+  // ending the current entry now; listeners move on at their next check.
+  await skipCurrent(env, Date.now())
+  return json({ ok: true, mode: 'program' })
+}
+
+// ---------- rotation: folders, hits, grid (admin) ----------
+
+async function handleRotation(env: Env): Promise<Response> {
+  const [folders, links, slots] = await env.DB.batch([
+    env.DB.prepare('select id, name, kind from folders order by position'),
+    env.DB.prepare('select folder_id, track_id from folder_tracks'),
+    env.DB.prepare('select id, folder_id, title, days, start_minute, end_minute, priority from schedule_slots order by priority, start_minute'),
+  ])
+  const memberships: Record<string, string[]> = {}
+  for (const l of links.results as { folder_id: string; track_id: string }[]) (memberships[l.track_id] ??= []).push(l.folder_id)
+  return json({
+    folders: folders.results,
+    memberships,
+    autoHitIds: await autoHitIds(env, Date.now()),
+    slots: (slots.results as Record<string, unknown>[]).map((r) => ({
+      id: r.id,
+      folderId: r.folder_id,
+      title: r.title,
+      days: r.days,
+      startMinute: r.start_minute,
+      endMinute: r.end_minute,
+      priority: r.priority,
+    })),
+  })
+}
+
+async function handleSetTrackFolders(req: Request, env: Env, trackId: string): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as { folderIds?: string[] } | null
+  if (!Array.isArray(body?.folderIds) || body.folderIds.some((x) => typeof x !== 'string')) return json({ error: 'folderIds is required' }, 400)
+  const known = new Set((await env.DB.prepare('select id from folders').all<{ id: string }>()).results.map((r) => r.id))
+  const ids = [...new Set(body.folderIds)].filter((id) => known.has(id))
+  await env.DB.batch([
+    env.DB.prepare('delete from folder_tracks where track_id = ?').bind(trackId),
+    ...ids.map((id) => env.DB.prepare('insert into folder_tracks (folder_id, track_id) values (?, ?)').bind(id, trackId)),
+  ])
+  return json({ ok: true, folderIds: ids })
+}
+
+/** Now / next / grid for the app. Cached a few seconds: every open app polls it. */
+async function handleProgram(env: Env, ctx: ExecutionContext): Promise<Response> {
+  const cacheKey = new Request('https://cache.bigunderfm/program')
+  const cached = await caches.default.match(cacheKey)
+  if (cached) return cached
+  const res = json(await programView(env, Date.now()))
+  res.headers.set('Cache-Control', 'public, max-age=5')
+  ctx.waitUntil(caches.default.put(cacheKey, res.clone()))
+  return res
 }
 
 // ---------- play-next queue + live music level (Liquidsoap, through skip-bridge) ----------
@@ -642,6 +721,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
   if (m === 'GET' && path === '/api/events') return handleListEvents(env)
   if (m === 'GET' && path === '/api/up-next') return handleUpNext(env, ctx)
   if (m === 'GET' && path === '/api/history') return handleHistory(env, ctx)
+  if (m === 'GET' && path === '/api/program') return handleProgram(env, ctx)
   const remind = path.match(/^\/api\/events\/([0-9a-f-]{36})\/remind$/)
   if (remind && m === 'POST') {
     const auth = await requireUser(req, env)
@@ -686,6 +766,9 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (m === 'PUT' && path === '/api/admin/show-name') return handleSetShowName(req, env)
     if (m === 'GET' && path === '/api/admin/stats') return handleStats(env)
     if (m === 'GET' && path === '/api/admin/fallback-status') return handleFallbackStatus(env)
+    if (m === 'GET' && path === '/api/admin/rotation') return handleRotation(env)
+    const trackFolders = path.match(/^\/api\/admin\/tracks\/([0-9a-f-]{36})\/folders$/)
+    if (trackFolders && m === 'PUT') return handleSetTrackFolders(req, env, trackFolders[1])
     // Cheap (no database): the dashboard polls this every few seconds.
     if (m === 'POST' && path === '/api/admin/skip') return handleSkip(env)
     if (m === 'GET' && path === '/api/admin/live') {
@@ -790,28 +873,10 @@ async function handleHistory(env: Env, ctx: ExecutionContext): Promise<Response>
   return res
 }
 
-// ---------- fallback broadcast (VPS down) ----------
-// While the VPS is unreachable the app plays the library straight from R2 on
-// a shared clock (FALLBACK_ANCHOR in src/screens/RadioScreen.tsx — keep the
-// two in sync). The same calculation here gives admins "now playing" and
-// keeps "что играло" and the listener peaks going in that mode.
-const FALLBACK_ANCHOR_MS = Date.parse('2026-01-01T00:00:00Z')
-
-async function fallbackNowPlaying(env: Env): Promise<{ artist: string; title: string; startedAt: string } | null> {
-  const rows = await listPlaylist(env, false)
-  const total = rows.reduce((sum, r) => sum + r.duration_seconds, 0)
-  if (rows.length === 0 || total <= 0) return null
-  const elapsed = ((((Date.now() - FALLBACK_ANCHOR_MS) / 1000) % total) + total) % total
-  let acc = 0
-  for (const r of rows) {
-    if (elapsed < acc + r.duration_seconds) {
-      return { artist: r.artist, title: r.title, startedAt: new Date(Date.now() - (elapsed - acc) * 1000).toISOString() }
-    }
-    acc += r.duration_seconds
-  }
-  const last = rows[rows.length - 1]
-  return { artist: last.artist, title: last.title, startedAt: nowIso() }
-}
+// ---------- air without the VPS ----------
+// While the VPS is unreachable the app plays the planned timeline (program
+// table, see program.ts) straight from R2. The same table tells admins what
+// is on, and keeps "что играло" and the listener peaks going.
 
 /** People with the app open right now (Presence durable object). */
 async function appOpenCount(env: Env): Promise<number> {
@@ -821,15 +886,28 @@ async function appOpenCount(env: Env): Promise<number> {
 }
 
 async function handleFallbackStatus(env: Env): Promise<Response> {
-  const [now, appOpen] = await Promise.all([fallbackNowPlaying(env), appOpenCount(env)])
+  const [now, appOpen] = await Promise.all([programNow(env, Date.now()), appOpenCount(env)])
   return json({
     appOpen,
-    title: now ? `${now.artist} - ${now.title}` : null,
+    title: now ? airTitle(now.artist, now.title) : null,
     trackStartedAt: now?.startedAt ?? null,
   })
 }
 
+async function setVpsUp(env: Env, up: boolean): Promise<boolean> {
+  const prev = await env.DB.prepare("select value from settings where key = 'vps_up'").first<{ value: string }>()
+  const was = prev?.value === '1'
+  if (was !== up || !prev) {
+    await env.DB.prepare("insert into settings (key, value) values ('vps_up', ?) on conflict(key) do update set value = excluded.value")
+      .bind(up ? '1' : '0')
+      .run()
+  }
+  return was
+}
+
+/** Once a minute: keep the air planned, and sample listeners / what played. */
 async function sampleListeners(env: Env): Promise<void> {
+  const nowMs = Date.now()
   let listeners: number
   let title: string
   let source: any = null
@@ -839,17 +917,29 @@ async function sampleListeners(env: Env): Promise<void> {
   } catch {
     source = null
   }
+  const wasUp = await setVpsUp(env, Boolean(source))
   if (source) {
     listeners = Number(source.listeners ?? 0)
     title = typeof source.title === 'string' ? source.title.trim() : ''
-  } else {
-    // VPS down: the app is on the R2 fallback. Icecast can't count listeners
-    // then, so the number of people with the app open stands in for it.
     try {
-      const now = await fallbackNowPlaying(env)
-      title = now ? `${now.artist} - ${now.title}` : ''
+      // The VPS just came back: what was planned for the app's own playback
+      // will not air, so it must not count as played.
+      if (!wasUp) await env.DB.prepare('delete from program where starts_at > ?').bind(new Date(nowMs).toISOString()).run()
+      const { items } = await bridge<{ items: unknown[] }>(env, '/queue')
+      await feedVpsQueue(env, nowMs, items.length, (uri) => bridge(env, '/queue', { method: 'POST', body: { uri } }))
+    } catch (err) {
+      console.error('feeding the VPS queue failed', err)
+    }
+  } else {
+    // VPS down: the app plays the planned timeline. Icecast can't count
+    // listeners then, so the number of people with the app open stands in.
+    try {
+      await planAhead(env, nowMs)
+      const now = await programNow(env, nowMs)
+      title = now && now.kind !== 'jingle' ? airTitle(now.artist, now.title) : ''
       listeners = await appOpenCount(env)
-    } catch {
+    } catch (err) {
+      console.error('planning failed', err)
       return
     }
   }

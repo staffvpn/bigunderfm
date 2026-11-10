@@ -10,6 +10,10 @@ export interface Track {
   durationSeconds: number
   fileSizeBytes: number
   isEnabled: boolean
+  /** 'jingle' rows are station idents, played between tracks by the rotation. */
+  kind?: 'track' | 'jingle'
+  isHit?: boolean
+  createdAt?: string
 }
 
 export interface PlaylistEntry {

@@ -24,6 +24,25 @@ Liquidsoap only when the library changed. See the comment at the top of the
 script for how it keeps a reload from restarting the broadcast.
 ```
 
+## Autorotation
+
+The Worker programs the air (`worker/src/rotation.ts`, `worker/src/program.ts`):
+
+- Folders: day parts by mood (Утро 06-11, День 11-17, Вечер 17-23, Ночь 23-06,
+  Moscow time) and one folder per show. `schedule_slots` says when each folder
+  is on; a show slot sits on top of the day part for its hour and only airs
+  if its folder has tracks. A track in no folder plays in every day part.
+- Inside a slot: least recently played first with some randomness, the same
+  artist never close together, every 4th track a hit (marked by an admin or
+  picked by listeners' hearts; a hit returns no sooner than 3 hours), uploads
+  of the last two weeks get extra spins, a jingle (`tracks.kind = 'jingle'`)
+  after every 5 tracks.
+- The minute cron keeps the `program` table planned an hour ahead. While the
+  VPS is down the app plays that timeline from R2 (`GET /api/program`); when
+  the VPS is up the same picks are pushed into Liquidsoap's play-next queue
+  and `playlist.m3u` is only its safety net.
+- Admins sort tracks into folders and mark hits in the Library tab.
+
 The previous Supabase backend was retired on 2026-09-20. `supabase/` is kept
 only as history.
 

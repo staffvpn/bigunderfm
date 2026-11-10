@@ -99,6 +99,42 @@ button {
   text-transform: uppercase;
 }
 
+/* Which part of the grid is on air, under the station name. */
+.radio-screen__grid {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: -6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.radio-screen__grid-now {
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.radio-screen__grid-next {
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.radio-screen__new-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  background: #ffffff;
+  color: #121212;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
 .on-air-badge {
   display: flex;
   align-items: center;
@@ -858,6 +894,39 @@ button {
   width: 100%;
   box-sizing: border-box;
   margin-bottom: 12px;
+}
+
+/* Folder chips: the filter row above the list, and the row under each track. */
+.admin-library__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.admin-library__chips--track {
+  padding-left: 40px;
+  margin: 6px 0 8px;
+}
+
+.admin-library button.admin-library__chip {
+  padding: 4px 8px;
+  border-color: var(--color-surface-2);
+  color: var(--color-muted);
+  font-size: 10px;
+}
+
+.admin-library button.admin-library__chip.is-on {
+  background: var(--color-text);
+  border-color: var(--color-text);
+  color: var(--color-accent-ink);
+}
+
+.admin-library__hint {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-muted);
 }
 
 /* "Play next" queue, above the search. */

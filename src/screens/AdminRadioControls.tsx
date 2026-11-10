@@ -119,8 +119,8 @@ export function AdminRadioControls() {
 
       {serverDown && (
         <p className="admin-dashboard__warning">
-          ⚠ Сервер вещания не отвечает. Радио играет в запасном режиме прямо из Cloudflare: музыка идёт, но выход
-          ведущих в эфир и переключение треков сейчас не работают.
+          Сервер вещания не отвечает. Радио играет прямо из Cloudflare по той же авторотации: музыка идёт, треки
+          переключаются, но выход ведущих в эфир с микрофоном сейчас не работает.
         </p>
       )}
       {storageLow && (
@@ -212,7 +212,7 @@ export function AdminRadioControls() {
         <span className="admin-dashboard__now-playing-title">{status?.title ?? fallbackStatus?.title ?? '—'}</span>
       </div>
 
-      <button onClick={handleSkip} disabled={skipping || (!status && !!fallbackStatus)}>
+      <button onClick={handleSkip} disabled={skipping}>
         {skipping ? 'ПЕРЕКЛЮЧАЮ...' : 'СЛЕДУЮЩИЙ ТРЕК'}
       </button>
       {skipError && <p className="admin-radio-controls__error">{skipError}</p>}

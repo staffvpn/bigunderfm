@@ -1,11 +1,13 @@
 import { DurableObject } from 'cloudflare:workers'
 import type { Env } from './env'
+import { recordHearts } from './program'
 
 // Hearts are batched: everyone gets one message per window, with the hearts
 // everyone else sent in it (their own taps are already shown on their phone).
 const HEART_FLUSH_MS = 500
 // One message can carry at most this many taps, so nobody floods the room.
 const MAX_HEARTS_PER_MESSAGE = 10
+const HEART_CREDIT_MS = 60_000
 
 /**
  * Counts how many clients currently have the app open: each client keeps one
@@ -18,6 +20,7 @@ const MAX_HEARTS_PER_MESSAGE = 10
  */
 export class Presence extends DurableObject<Env> {
   private pendingHearts = new Map<WebSocket, number>()
+  private lastCredit = new Map<WebSocket, number>()
   private flushTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -54,6 +57,17 @@ export class Presence extends DurableObject<Env> {
     let total = 0
     batch.forEach((n) => (total += n))
     if (!total) return
+    // The track on air gets one heart per listener, at most once a minute
+    // each (auto-hits): counting people rather than taps keeps one fast
+    // thumb from deciding what a hit is.
+    const nowMs = Date.now()
+    let credited = 0
+    batch.forEach((_n, ws) => {
+      if (nowMs - (this.lastCredit.get(ws) ?? 0) < HEART_CREDIT_MS) return
+      this.lastCredit.set(ws, nowMs)
+      credited++
+    })
+    if (credited) this.ctx.waitUntil(recordHearts(this.env, credited).catch((err) => console.error('recordHearts failed', err)))
     for (const ws of this.ctx.getWebSockets()) {
       const others = total - (batch.get(ws) ?? 0)
       if (!others) continue
@@ -66,6 +80,7 @@ export class Presence extends DurableObject<Env> {
   }
 
   webSocketClose(ws: WebSocket, code: number): void {
+    this.lastCredit.delete(ws)
     try {
       ws.close(code === 1005 ? 1000 : code)
     } catch {

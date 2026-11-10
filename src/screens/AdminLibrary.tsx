@@ -6,6 +6,23 @@ import { getTelegramUserId } from '../lib/telegram'
 
 const FILE_INPUT_ID = 'admin-library-file-input'
 
+// Folders the autorotation plays from (see worker/src/rotation.ts): day
+// parts by mood, plus one folder per show. A track can sit in several; a
+// track in none plays in every day part.
+interface Folder {
+  id: string
+  name: string
+  kind: 'mood' | 'show'
+}
+interface Rotation {
+  folders: Folder[]
+  memberships: Record<string, string[]>
+  autoHitIds: string[]
+}
+const NO_FOLDER = '__none'
+const HITS = '__hits'
+const JINGLES = '__jingles'
+
 // Shuffle reorders the ENTIRE live rotation, which every other admin also
 // relies on staying predictable — restricted to this one admin's own
 // Telegram account per explicit request, everyone else just doesn't see
@@ -43,6 +60,55 @@ export function AdminLibrary() {
   const [queueError, setQueueError] = useState<string | null>(null)
   const [queueingId, setQueueingId] = useState<string | null>(null)
 
+  const [rotation, setRotation] = useState<Rotation | null>(null)
+  // 'all', a folder id, or one of NO_FOLDER / HITS / JINGLES.
+  const [folderFilter, setFolderFilter] = useState('all')
+
+  async function reloadRotation() {
+    try {
+      setRotation(await api<Rotation>('/api/admin/rotation'))
+    } catch (err) {
+      setResults([`ОШИБКА: папки не загрузились (${(err as Error).message})`])
+    }
+  }
+
+  // Tapping a folder chip files the track there (or takes it out). Shown
+  // right away, then confirmed by the backend.
+  async function toggleFolder(trackId: string, folderId: string) {
+    if (!rotation) return
+    const current = rotation.memberships[trackId] ?? []
+    const next = current.includes(folderId) ? current.filter((id) => id !== folderId) : [...current, folderId]
+    setRotation({ ...rotation, memberships: { ...rotation.memberships, [trackId]: next } })
+    try {
+      await api(`/api/admin/tracks/${trackId}/folders`, { method: 'PUT', body: { folderIds: next } })
+    } catch (err) {
+      setResults([`ОШИБКА: ${(err as Error).message}`])
+      reloadRotation()
+    }
+  }
+
+  async function toggleHit(trackId: string, isHit: boolean) {
+    setEntries((prev) => prev.map((e) => (e.track.id === trackId ? { ...e, track: { ...e.track, isHit: !isHit } } : e)))
+    try {
+      await api(`/api/admin/tracks/${trackId}`, { method: 'PATCH', body: { isHit: !isHit } })
+    } catch (err) {
+      setResults([`ОШИБКА: ${(err as Error).message}`])
+      reload()
+    }
+  }
+
+  async function toggleJingle(trackId: string, isJingle: boolean) {
+    setEntries((prev) =>
+      prev.map((e) => (e.track.id === trackId ? { ...e, track: { ...e.track, kind: isJingle ? 'track' : 'jingle' } } : e)),
+    )
+    try {
+      await api(`/api/admin/tracks/${trackId}`, { method: 'PATCH', body: { kind: isJingle ? 'track' : 'jingle' } })
+    } catch (err) {
+      setResults([`ОШИБКА: ${(err as Error).message}`])
+      reload()
+    }
+  }
+
   async function reload() {
     // includeDisabled: the admin must still see (and be able to re-enable)
     // disabled tracks, and reorder renumbering must cover every row.
@@ -66,6 +132,7 @@ export function AdminLibrary() {
 
   useEffect(() => {
     reload()
+    reloadRotation()
     // Switching tabs away mid-drag unmounts this screen (see App.tsx) —
     // without this, the auto-scroll rAF loop would keep running against a
     // gone component, still scrolling whatever tab replaced it.
@@ -303,10 +370,41 @@ export function AdminLibrary() {
   }
 
   const searchTerm = query.trim().toLowerCase()
-  const searching = searchTerm !== ''
+  const folderOf = (trackId: string) => rotation?.memberships[trackId] ?? []
+  const autoHits = new Set(rotation?.autoHitIds ?? [])
+  const inFilter = (e: PlaylistEntry) => {
+    const isJingle = e.track.kind === 'jingle'
+    if (folderFilter === 'all') return true
+    if (folderFilter === JINGLES) return isJingle
+    if (isJingle) return false
+    if (folderFilter === HITS) return !!e.track.isHit || autoHits.has(e.track.id)
+    if (folderFilter === NO_FOLDER) return folderOf(e.track.id).length === 0
+    return folderOf(e.track.id).includes(folderFilter)
+  }
+  // Searching or filtering shows a subset, where dragging to reorder makes no sense.
+  const searching = searchTerm !== '' || folderFilter !== 'all'
+  const filterCount = (id: string) => {
+    return entries.filter((e) => {
+      const isJingle = e.track.kind === 'jingle'
+      if (id === JINGLES) return isJingle
+      if (isJingle) return false
+      if (id === HITS) return !!e.track.isHit || autoHits.has(e.track.id)
+      if (id === NO_FOLDER) return folderOf(e.track.id).length === 0
+      return folderOf(e.track.id).includes(id)
+    }).length
+  }
+  const filterChips: { id: string; label: string }[] = rotation
+    ? [
+        { id: 'all', label: `Все ${entries.length}` },
+        ...rotation.folders.map((f) => ({ id: f.id, label: `${f.name} ${filterCount(f.id)}` })),
+        { id: NO_FOLDER, label: `Без папки ${filterCount(NO_FOLDER)}` },
+        { id: HITS, label: `Хиты ${filterCount(HITS)}` },
+        { id: JINGLES, label: `Джинглы ${filterCount(JINGLES)}` },
+      ]
+    : []
   const visibleEntries = searching
-    ? entries.filter((e) =>
-        `${e.track.artist} ${e.track.title}`.toLowerCase().includes(searchTerm),
+    ? entries.filter(
+        (e) => inFilter(e) && (searchTerm === '' || `${e.track.artist} ${e.track.title}`.toLowerCase().includes(searchTerm)),
       )
     : dragOrderIds
       ? dragOrderIds.map((id) => entries.find((e) => e.track.id === id)).filter((e): e is PlaylistEntry => !!e)
@@ -399,6 +497,27 @@ export function AdminLibrary() {
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Поиск по названию или исполнителю"
       />
+      {rotation && (
+        <>
+          <div className="admin-library__chips">
+            {filterChips.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className={`admin-library__chip${folderFilter === c.id ? ' is-on' : ''}`}
+                onClick={() => setFolderFilter(c.id)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <p className="admin-library__hint">
+            Эфир собирается сам: утром, днём, вечером и ночью играет своя папка, шоу выходят из своих папок по
+            расписанию, хиты повторяются каждые несколько часов. Нажми на папку под треком, чтобы положить его туда
+            или убрать. Трек без папки играет в любое время суток.
+          </p>
+        </>
+      )}
       {searching && (
         <p className="admin-library__rotation-summary">
           Найдено: {visibleEntries.length}
@@ -456,6 +575,42 @@ export function AdminLibrary() {
                     {entry.position}. {entry.track.artist} — {entry.track.title}
                   </span>
                 </div>
+                {rotation && (
+                  <div className="admin-library__chips admin-library__chips--track">
+                    {entry.track.kind === 'jingle' ? (
+                      <button
+                        type="button"
+                        className="admin-library__chip is-on"
+                        onClick={() => toggleJingle(entry.track.id, true)}
+                      >
+                        Джингл
+                      </button>
+                    ) : (
+                      <>
+                        {rotation.folders.map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            className={`admin-library__chip${folderOf(entry.track.id).includes(f.id) ? ' is-on' : ''}`}
+                            onClick={() => toggleFolder(entry.track.id, f.id)}
+                          >
+                            {f.name}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          className={`admin-library__chip admin-library__chip--hit${entry.track.isHit ? ' is-on' : ''}`}
+                          onClick={() => toggleHit(entry.track.id, !!entry.track.isHit)}
+                        >
+                          {autoHits.has(entry.track.id) && !entry.track.isHit ? 'Хит (по сердечкам)' : 'Хит'}
+                        </button>
+                        <button type="button" className="admin-library__chip" onClick={() => toggleJingle(entry.track.id, false)}>
+                          Джингл
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
                 <div className="admin-library__actions">
                   <button onClick={() => handleQueue(entry.track.id)} disabled={queueingId === entry.track.id}>
                     {queueingId === entry.track.id ? '...' : 'В очередь'}

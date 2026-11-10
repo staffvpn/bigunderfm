@@ -3,6 +3,7 @@ import { STREAM_HOST, STREAM_URL, decodeHtmlEntities, isStreamServerUp, mediaUrl
 import { computeCurrentPosition } from '../lib/radioClock'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
 import { fetchPlaylist, fetchUpNextFilePath, toPlaylistTracks, type PlaylistEntry } from '../lib/tracks'
+import { afterItem, fetchProgram, gridLine, isLeftBehind, tuneIn, type Program, type ProgramItem, type TuneIn } from '../lib/program'
 import { OnAirBadge } from '../components/OnAirBadge'
 import { EventTicker } from '../components/EventTicker'
 import { NextShowCard } from '../components/NextShowCard'
@@ -35,7 +36,15 @@ const BACKGROUND_ROTATE_MS = 6 * 60 * 60 * 1000
 // roughly the same track at the same moment. No live hosts, no admin queue,
 // no skip in this mode - just the rotation. As soon as a track ends and the
 // VPS answers again, playback goes back to the real stream.
+//
+// Since the autorotation the fallback follows the station's planned air
+// (/api/program: folders by time of day, hits, new tracks, jingles) rather
+// than the plain playlist loop; the loop below stays only as a last resort
+// for when that endpoint can't be reached.
 const FALLBACK_ANCHOR = '2026-01-01T00:00:00Z'
+const PROGRAM_POLL_MS = 30_000
+// "Новинка" badge on the stream, same two weeks the rotation uses.
+const NEW_FOR_MS = 14 * 86_400_000
 const STREAM_CONNECT_TIMEOUT_MS = 5000
 
 // Remembers for a while that the VPS was down, so reopening the app goes
@@ -155,25 +164,84 @@ export function RadioScreen() {
     }, STREAM_CONNECT_TIMEOUT_MS)
   }
 
-  function playFallbackEntry(index: number, offsetSeconds: number): boolean {
+  function startFallbackAudio(track: { artist: string; title: string; filePath: string }, offsetSeconds: number): boolean {
     const audio = audioRef.current
-    const list = entriesRef.current
-    if (!audio || list.length === 0) return false
-    const i = ((index % list.length) + list.length) % list.length
-    const entry = list[i]
-    fallbackIndexRef.current = i
-    setFallbackIndex(i)
-    setNowPlaying({ artist: entry.track.artist, title: entry.track.title })
+    if (!audio) return false
+    setNowPlaying({ artist: track.artist, title: track.title })
     pendingSeekRef.current = offsetSeconds > 2 ? offsetSeconds : null
     connectingRef.current = true
     setIsBuffering(true)
-    audio.src = mediaUrl(entry.track.filePath)
+    audio.src = mediaUrl(track.filePath)
     audio.play().catch(() => {})
     return true
   }
 
-  // Joins the shared fallback timeline wherever it currently is.
+  // The station's planned air (see lib/program.ts).
+  const [program, setProgram] = useState<Program | null>(null)
+  const programRef = useRef<Program | null>(null)
+  const [fallbackItem, setFallbackItem] = useState<ProgramItem | null>(null)
+  const fallbackItemIdRef = useRef<number | null>(null)
+
+  async function refreshProgram(): Promise<Program | null> {
+    const fresh = await fetchProgram()
+    if (fresh) {
+      programRef.current = fresh
+      setProgram(fresh)
+    }
+    return fresh ?? programRef.current
+  }
+
+  function playProgramItem(t: TuneIn): boolean {
+    fallbackItemIdRef.current = t.item.id
+    setFallbackItem(t.item)
+    fallbackIndexRef.current = -1
+    setFallbackIndex(-1)
+    return startFallbackAudio(t.item.track, t.offsetSeconds)
+  }
+
+  function playFallbackEntry(index: number, offsetSeconds: number): boolean {
+    const list = entriesRef.current
+    if (list.length === 0) return false
+    const i = ((index % list.length) + list.length) % list.length
+    const entry = list[i]
+    fallbackItemIdRef.current = null
+    setFallbackItem(null)
+    fallbackIndexRef.current = i
+    setFallbackIndex(i)
+    return startFallbackAudio(entry.track, offsetSeconds)
+  }
+
+  // What to play once the current fallback track is over (or failed to load).
+  async function advanceFallback() {
+    const p = await refreshProgram()
+    if (isPausedRef.current || !fallbackRef.current) return
+    const next = p ? afterItem(p, fallbackItemIdRef.current) : null
+    if (next) {
+      playProgramItem(next)
+      return
+    }
+    if (fallbackIndexRef.current >= 0) {
+      playFallbackEntry(fallbackIndexRef.current + 1, 0)
+    } else if (!tuneInFallback()) {
+      connectingRef.current = false
+      setIsBuffering(false)
+      setIsPaused(true)
+      setConnectError(true)
+    }
+  }
+
+  // Joins the air wherever it currently is: the planned timeline when we
+  // have it, the plain playlist loop otherwise.
   function tuneInFallback(): boolean {
+    const live = programRef.current ? tuneIn(programRef.current) : null
+    if (live) return playProgramItem(live)
+    // Stale or missing program: start on the loop right away (this may be
+    // running inside the tap that iOS requires for play()), and move onto
+    // the real air as soon as it is known.
+    refreshProgram().then((p) => {
+      const t = p ? tuneIn(p) : null
+      if (t && fallbackRef.current && !isPausedRef.current && fallbackItemIdRef.current === null) playProgramItem(t)
+    })
     const list = entriesRef.current
     const pos = computeCurrentPosition(
       toPlaylistTracks(list),
@@ -194,8 +262,32 @@ export function RadioScreen() {
     // can leave a connection attempt hanging for a long time before the
     // audio element reports an error, so without this the first tap would
     // just sit on "Подключение...".
+    // Shows what the planned air has on right now (before play is pressed,
+    // and while paused).
+    function showProgramPreview(p: Program | null): boolean {
+      const live = p ? tuneIn(p) : null
+      if (!live) return false
+      setFallbackItem(live.item)
+      setFallbackIndex(-1)
+      fallbackIndexRef.current = -1
+      setNowPlaying({ artist: live.item.track.artist, title: live.item.track.title })
+      return true
+    }
+
+    async function pollProgram() {
+      const p = await refreshProgram()
+      if (!p || !fallbackRef.current) return
+      if (isPausedRef.current) {
+        showProgramPreview(p)
+      } else if (!connectingRef.current && isLeftBehind(p, fallbackItemIdRef.current)) {
+        // The station moved on without us (an admin skipped the track).
+        tuneInFallback()
+      }
+    }
+    const programTimer = setInterval(pollProgram, PROGRAM_POLL_MS)
+
     if (vpsRecentlyDown()) enterFallback()
-    Promise.all([isStreamServerUp(4000), playlistLoaded]).then(([up]) => {
+    Promise.all([isStreamServerUp(4000), playlistLoaded, refreshProgram()]).then(([up]) => {
       rememberVpsDown(!up)
       if (up) {
         // Came back while the app was closed - use the real stream again,
@@ -205,12 +297,15 @@ export function RadioScreen() {
           setFallback(false)
           setFallbackIndex(-1)
           fallbackIndexRef.current = -1
+          setFallbackItem(null)
           setNowPlaying(null)
           pollNowPlaying()
         }
         return
       }
       enterFallback()
+      if (!isPausedRef.current) return
+      if (showProgramPreview(programRef.current)) return
       // Show what's on the shared fallback timeline right away, before play.
       const pos = computeCurrentPosition(
         toPlaylistTracks(entriesRef.current),
@@ -257,6 +352,7 @@ export function RadioScreen() {
     function handleVisibilityChange() {
       if (document.visibilityState === 'visible') {
         pollNowPlaying()
+        pollProgram()
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -345,14 +441,14 @@ export function RadioScreen() {
         // A broken or missing file - move on to the next track rather than
         // stopping, but give up if nothing in the library will play.
         fallbackErrorsRef.current += 1
-        if (fallbackErrorsRef.current > Math.min(entriesRef.current.length, 5)) {
+        if (fallbackErrorsRef.current > 5) {
           setIsBuffering(false)
           setIsPaused(true)
           setConnectError(true)
           return
         }
         setTimeout(() => {
-          if (!isPausedRef.current) playFallbackEntry(fallbackIndexRef.current + 1, 0)
+          if (!isPausedRef.current) advanceFallback()
         }, 1000)
         return
       }
@@ -364,16 +460,20 @@ export function RadioScreen() {
         return
       }
       if (isPausedRef.current) return
-      // Between tracks is the one moment switching back is seamless.
-      if (await isStreamServerUp(3000)) {
+      // Between tracks is the one moment switching back is seamless. The
+      // backend checks the radio server every minute; only when it says the
+      // server is back (or we have no word from it) is it worth the wait.
+      if (programRef.current?.vpsUp !== false && (await isStreamServerUp(3000))) {
         rememberVpsDown(false)
         fallbackRef.current = false
         setFallback(false)
         reconnectAttemptsRef.current = 0
+        fallbackItemIdRef.current = null
+        setFallbackItem(null)
         reconnect()
         return
       }
-      playFallbackEntry(fallbackIndexRef.current + 1, 0)
+      advanceFallback()
     }
     // A live stream "ending" is never intentional on the server side —
     // treat it exactly like a dropped connection.
@@ -386,6 +486,7 @@ export function RadioScreen() {
 
     return () => {
       clearInterval(nowPlayingTimer)
+      clearInterval(programTimer)
       clearInterval(backgroundTimer)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
@@ -560,6 +661,21 @@ export function RadioScreen() {
     ? playlistNextEntry
     : serverNextEntry && serverNextEntry.track.id !== currentEntry?.track.id ? serverNextEntry : playlistNextEntry
 
+  // On the planned air "next" is simply the following item of the timeline
+  // (or the one on right now, if this phone is still finishing the last one).
+  const programItems = program?.items ?? []
+  const fallbackItemIndex = fallbackItem ? programItems.findIndex((it) => it.id === fallbackItem.id) : -1
+  const programNext = fallbackItem ? (fallbackItemIndex >= 0 ? programItems[fallbackItemIndex + 1] : programItems[0]) : undefined
+  const nextTrack = fallback && fallbackItem ? programNext?.track : nextEntry?.track
+
+  const isNewTrack =
+    fallback && fallbackItem
+      ? fallbackItem.isNew
+      : !!currentEntry?.track.createdAt &&
+        currentEntry.track.kind !== 'jingle' &&
+        Date.now() - Date.parse(currentEntry.track.createdAt) < NEW_FOR_MS
+  const grid = gridLine(program)
+
   const showConnecting = userStarted && !isPaused && isBuffering
 
   return (
@@ -570,6 +686,12 @@ export function RadioScreen() {
           <span className="radio-screen__station">BIGUNDER FM</span>
           <OnAirBadge isPlaying={userStarted && !isPaused && !isBuffering} />
         </div>
+        {grid && (
+          <div className="radio-screen__grid">
+            <span className="radio-screen__grid-now">{grid.now}</span>
+            {grid.next && <span className="radio-screen__grid-next">{grid.next}</span>}
+          </div>
+        )}
 
         <div
           className="radio-screen__cover"
@@ -596,7 +718,10 @@ export function RadioScreen() {
           )}
           <div className="radio-screen__cover-scrim" aria-hidden="true" />
           <div className="radio-screen__cover-text">
-            <div className="radio-screen__now-label">Сейчас играет</div>
+            <div className="radio-screen__now-label">
+              Сейчас играет
+              {isNewTrack && <span className="radio-screen__new-badge">Новинка</span>}
+            </div>
             <div className="radio-screen__artist">{nowPlaying?.artist ?? '—'}</div>
             <div
               className={`radio-screen__cover-title${showConnecting ? ' radio-screen__cover-title--status' : ''}`}
@@ -611,9 +736,9 @@ export function RadioScreen() {
         <div className="radio-screen__meta-row">
           <div className="radio-screen__next-label">
             <span className="radio-screen__next-label-tag">Следующий трек:</span>
-            {nextEntry && (
+            {nextTrack && (
               <span className="radio-screen__next-label-name">
-                {nextEntry.track.artist} — {nextEntry.track.title}
+                {nextTrack.artist} — {nextTrack.title}
               </span>
             )}
             <PlayedHistory />
