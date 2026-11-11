@@ -1,0 +1,14 @@
+#!/bin/bash
+# Diagnostics for the broadcast server (typed by hand in a console, so the URL is short).
+. /etc/radio.env
+T=0074c675-1af9-49ee-a5dd-a8d4ec6424b3.mp3
+code() { curl -s -m 20 -o /dev/null -w '%{http_code}' "$@"; }
+echo "worker playlist: $(code -H "X-Internal-Secret: $INTERNAL_SECRET" $WORKER_URL/internal/playlist.tsv)"
+echo "worker plain:    $(code $WORKER_URL/api/program)"
+echo "r2 direct:       $(code -I $R2_PUBLIC_BASE/$T)"
+echo "pages media:     $(code -I https://bigunderfm.pages.dev/media/$T)"
+echo "---- sync now"
+bash -x /usr/local/bin/sync-playlist.sh 2>&1 | tail -8
+ls -la /var/radio/
+echo "---- liquidsoap"
+journalctl -u radio-liq -n 12 --no-pager | cut -c1-160
