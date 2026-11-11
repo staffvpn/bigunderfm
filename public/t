@@ -1,0 +1,8 @@
+#!/bin/bash
+# Checks the Cloudflare relay of the live stream from the server itself.
+echo "---- headers"
+curl -s -m 8 -D - -o /dev/null https://bigunderfm.pages.dev/radio | head -12
+echo "---- bytes in 6 s (relay)"
+curl -s -m 6 -o /tmp/relay.mp3 https://bigunderfm.pages.dev/radio; ls -la /tmp/relay.mp3 | awk '{print $5" bytes"}'
+echo "---- bytes in 6 s (direct, for comparison)"
+curl -s -m 6 -o /tmp/direct.mp3 https://195-208-124-129.sslip.io/radio; ls -la /tmp/direct.mp3 | awk '{print $5" bytes"}'
