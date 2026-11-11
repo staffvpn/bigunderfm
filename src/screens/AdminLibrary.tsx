@@ -61,7 +61,7 @@ const SHUFFLE_ADMIN_TELEGRAM_ID = 432943377
 
 // Queued tracks get played (and leave the queue) on the radio server's own
 // schedule, so the list is refreshed while the library is open.
-const QUEUE_POLL_MS = 30_000
+const QUEUE_POLL_MS = 60_000
 
 export function AdminLibrary() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])

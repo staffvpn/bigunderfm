@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { subscribeProgramChanged } from '../lib/presence'
 import { LIVE_SERVER, RELAY_DELAY_MS, detachLive, isRelayRoute, playLive, statusUrl, decodeHtmlEntities, isStreamServerUp, mediaUrl } from '../lib/radioServer'
 import { computeCurrentPosition } from '../lib/radioClock'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
@@ -42,7 +43,9 @@ const BACKGROUND_ROTATE_MS = 6 * 60 * 60 * 1000
 // than the plain playlist loop; the loop below stays only as a last resort
 // for when that endpoint can't be reached.
 const FALLBACK_ANCHOR = '2026-01-01T00:00:00Z'
-const PROGRAM_POLL_MS = 30_000
+// The backend pushes changes over the presence socket; this slow check only
+// keeps the plan topped up (it is planned about an hour ahead) and the clock right.
+const PROGRAM_POLL_MS = 5 * 60_000
 // "Новинка" badge on the stream, same two weeks the rotation uses.
 const NEW_FOR_MS = 14 * 86_400_000
 const STREAM_CONNECT_TIMEOUT_MS = 5000
@@ -186,9 +189,11 @@ export function RadioScreen() {
   const [fallbackItem, setFallbackItem] = useState<ProgramItem | null>(null)
   const fallbackItemIdRef = useRef<number | null>(null)
 
+  const programFetchedAtRef = useRef(0)
   async function refreshProgram(): Promise<Program | null> {
     const fresh = await fetchProgram()
     if (fresh) {
+      programFetchedAtRef.current = Date.now()
       programRef.current = fresh
       setProgram(fresh)
     }
@@ -239,7 +244,10 @@ export function RadioScreen() {
 
   // What to play once the current fallback track is over (or failed to load).
   async function advanceFallback() {
-    const p = await refreshProgram()
+    // A recent plan that already knows the next track needs no new request.
+    const known = programRef.current
+    const fresh = known && Date.now() - programFetchedAtRef.current < PROGRAM_POLL_MS * 2 && afterItem(known, fallbackItemIdRef.current)
+    const p = fresh ? known : await refreshProgram()
     if (isPausedRef.current || !fallbackRef.current) return
     const next = p ? afterItem(p, fallbackItemIdRef.current) : null
     if (next) {
@@ -311,6 +319,7 @@ export function RadioScreen() {
       }
     }
     const programTimer = setInterval(pollProgram, PROGRAM_POLL_MS)
+    const stopProgramPush = subscribeProgramChanged(pollProgram)
 
     if (vpsRecentlyDown()) enterFallback()
     Promise.all([isStreamServerUp(4000), playlistLoaded, refreshProgram()]).then(([up]) => {
@@ -351,7 +360,7 @@ export function RadioScreen() {
     // server (Liquidsoap) is the only thing that actually knows where in
     // the broadcast we are.
     async function pollNowPlaying() {
-      if (fallbackRef.current) return
+      if (!LIVE_SERVER || fallbackRef.current) return
       try {
         const resp = await fetch(statusUrl())
         const data = await resp.json()
@@ -517,6 +526,7 @@ export function RadioScreen() {
     return () => {
       clearInterval(nowPlayingTimer)
       clearInterval(programTimer)
+      stopProgramPush()
       clearInterval(backgroundTimer)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
@@ -640,6 +650,8 @@ export function RadioScreen() {
   // queue). Asked again a little after every track change, once the server
   // has moved on, and once a minute in case an admin queued something.
   useEffect(() => {
+    // Only a broadcast server knows its own queue; without one the plan has it.
+    if (!LIVE_SERVER) return
     const refresh = () => fetchUpNextFilePath().then(setUpNextPath)
     const first = setTimeout(refresh, 12_000)
     const timer = setInterval(refresh, 60_000)

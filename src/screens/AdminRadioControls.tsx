@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
+import { subscribeProgramChanged } from '../lib/presence'
 import { LIVE_SERVER, fetchIcecastStatus, type IcecastStatus } from '../lib/radioServer'
 import { fetchAdminStats, STORAGE_LIMIT_BYTES, type AdminStats } from '../lib/adminStats'
 import { formatDuration, formatElapsedSince, formatBytes } from '../lib/format'
@@ -8,7 +9,7 @@ import { LiveBroadcast } from '../components/LiveBroadcast'
 // Above this fraction of the free R2 allowance, flag it.
 const STORAGE_WARNING_THRESHOLD = 0.85
 
-const STATUS_POLL_MS = 5000
+const STATUS_POLL_MS = 30_000
 // A single failed poll is routine (a request can just drop) — only flag
 // the server as actually down after several polls in a row fail, so a
 // one-off network blip doesn't flash a false alarm at the admin.
@@ -38,6 +39,7 @@ export function AdminRadioControls() {
     fetchAdminStats().then(setStats)
 
     async function pollStream() {
+      if (document.visibilityState !== 'visible') return
       const result = await fetchIcecastStatus()
       if (result) {
         failureStreakRef.current = 0
@@ -59,7 +61,10 @@ export function AdminRadioControls() {
     }
     pollStream()
     const streamTimer = setInterval(pollStream, STATUS_POLL_MS)
+    // A skip or a queue change shows up at once instead of at the next check.
+    const stopPush = subscribeProgramChanged(pollStream)
     return () => {
+      stopPush()
       clearInterval(streamTimer)
     }
   }, [])

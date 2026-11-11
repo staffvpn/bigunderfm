@@ -505,7 +505,7 @@ async function handleSkip(env: Env): Promise<Response> {
   // Without the VPS the app plays the planned timeline, so skipping means
   // ending the current entry now; listeners move on at their next check.
   await skipCurrent(env, Date.now())
-  await dropProgramCache()
+  await dropProgramCache(env)
   return json({ ok: true, mode: 'program' })
 }
 
@@ -581,7 +581,7 @@ async function handleAddTimer(req: Request, env: Env): Promise<Response> {
     .bind(body.trackId, fireAt, body.daily ? minute : null, nowIso())
     .run()
   await planAhead(env, now, true)
-  await dropProgramCache()
+  await dropProgramCache(env)
   return json({ ok: true, fireAt })
 }
 
@@ -594,7 +594,7 @@ async function handleDeleteTimer(env: Env, id: number): Promise<Response> {
     env.DB.prepare("delete from program where kind = 'timer' and track_id = ? and starts_at > ?").bind(row.track_id, nowIso()),
   ])
   await replanFuture(env, Date.now())
-  await dropProgramCache()
+  await dropProgramCache(env)
   return json({ ok: true })
 }
 
@@ -692,8 +692,13 @@ function trackKeyFromUri(env: Env, uri: string): string | null {
 }
 
 /** Listeners should see a changed timeline at their next check, not 5 s later. */
-async function dropProgramCache(): Promise<void> {
+async function dropProgramCache(env: Env): Promise<void> {
   await caches.default.delete(new Request('https://cache.bigunderfm/program'))
+  try {
+    await env.PRESENCE.get(env.PRESENCE.idFromName('room')).fetch('https://presence/changed')
+  } catch {
+    // apps still catch up at their next (rare) check
+  }
 }
 
 async function handleListQueue(env: Env): Promise<Response> {
@@ -743,7 +748,7 @@ async function handleQueueTrack(req: Request, env: Env): Promise<Response> {
   if (!row) return json({ error: 'Трек не найден' }, 404)
   if (!(await isVpsUp(env))) {
     await queueAt(env, Date.now(), row.id, Number(body.position) || 1)
-    await dropProgramCache()
+    await dropProgramCache(env)
     return json({ ok: true, mode: 'program' })
   }
   // Same annotate format as sync-playlist.sh, so the stream title looks the same.
@@ -835,7 +840,7 @@ async function handleInternal(req: Request, env: Env, path: string): Promise<Res
     await env.DB.prepare("insert into settings (key, value) values ('stream_tunnel', ?) on conflict(key) do update set value = excluded.value")
       .bind(host)
       .run()
-    await dropProgramCache()
+    await dropProgramCache(env)
     return json({ ok: true })
   }
 
@@ -948,7 +953,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (queued && m === 'DELETE') {
       if (!(await isVpsUp(env))) {
         await removeUpcoming(env, Date.now(), Number(queued[1]))
-        await dropProgramCache()
+        await dropProgramCache(env)
         return json({ ok: true, mode: 'program' })
       }
       return viaBridge(async () => json(await bridge(env, '/queue/remove', { method: 'POST', body: { rid: Number(queued[1]) } })))

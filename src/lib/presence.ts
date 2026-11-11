@@ -15,6 +15,7 @@ let socket: WebSocket | null = null
 let unsentHearts = 0
 let heartTimer: ReturnType<typeof setTimeout> | null = null
 const heartListeners = new Set<(n: number) => void>()
+const programListeners = new Set<() => void>()
 
 function connect(): void {
   let ws: WebSocket
@@ -37,7 +38,9 @@ function connect(): void {
   ws.onmessage = (e) => {
     if (typeof e.data !== 'string' || e.data === 'pong') return
     try {
-      const n = Number((JSON.parse(e.data) as { h?: number }).h)
+      const msg = JSON.parse(e.data) as { h?: number; p?: number }
+      if (msg.p) programListeners.forEach((l) => l())
+      const n = Number(msg.h)
       if (n > 0) heartListeners.forEach((l) => l(n))
     } catch {
       // not ours
@@ -79,5 +82,13 @@ export function subscribeHearts(listener: (n: number) => void): () => void {
   heartListeners.add(listener)
   return () => {
     heartListeners.delete(listener)
+  }
+}
+
+/** Called when the backend says the planned air changed (skip, queue, timer). */
+export function subscribeProgramChanged(listener: () => void): () => void {
+  programListeners.add(listener)
+  return () => {
+    programListeners.delete(listener)
   }
 }

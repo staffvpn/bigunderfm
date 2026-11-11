@@ -30,6 +30,18 @@ export class Presence extends DurableObject<Env> {
     if (url.pathname.endsWith('/count')) {
       return Response.json({ count: this.ctx.getWebSockets().length })
     }
+    if (url.pathname.endsWith('/changed')) {
+      // The planned air changed (skip, queue, timer): tell every open app, so
+      // none of them has to keep asking.
+      for (const ws of this.ctx.getWebSockets()) {
+        try {
+          ws.send('{"p":1}')
+        } catch {
+          // closing
+        }
+      }
+      return new Response('ok')
+    }
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('expected websocket', { status: 426 })
     }
