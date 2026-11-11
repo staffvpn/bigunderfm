@@ -3,7 +3,7 @@ import { STREAM_HOST, STREAM_URL, decodeHtmlEntities, isStreamServerUp, mediaUrl
 import { computeCurrentPosition } from '../lib/radioClock'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
 import { fetchPlaylist, fetchUpNextFilePath, toPlaylistTracks, type PlaylistEntry } from '../lib/tracks'
-import { afterItem, fetchProgram, gridLine, isLeftBehind, tuneIn, type Program, type ProgramItem, type TuneIn } from '../lib/program'
+import { afterItem, fetchProgram, gridLine, isLeftBehind, stationNow, tuneIn, type Program, type ProgramItem, type TuneIn } from '../lib/program'
 import { OnAirBadge } from '../components/OnAirBadge'
 import { EventTicker } from '../components/EventTicker'
 import { NextShowCard } from '../components/NextShowCard'
@@ -210,6 +210,28 @@ export function RadioScreen() {
     setFallbackIndex(i)
     return startFallbackAudio(entry.track, offsetSeconds)
   }
+
+  // A track the station cut short (a timer starts exactly on time, or an
+  // admin skipped it) is left at that moment rather than played to its end.
+  const cuttingRef = useRef(false)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const p = programRef.current
+      const id = fallbackItemIdRef.current
+      if (!p || id === null || !fallbackRef.current || isPausedRef.current || cuttingRef.current) return
+      const item = p.items.find((it) => it.id === id)
+      if (!item) return
+      const planned = Date.parse(item.endsAt) - Date.parse(item.startsAt)
+      if (planned > item.track.durationSeconds * 1000 - 3000) return
+      if (stationNow(p) < Date.parse(item.endsAt)) return
+      cuttingRef.current = true
+      advanceFallback().finally(() => {
+        cuttingRef.current = false
+      })
+    }, 1000)
+    return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // What to play once the current fallback track is over (or failed to load).
   async function advanceFallback() {
@@ -675,6 +697,15 @@ export function RadioScreen() {
         currentEntry.track.kind !== 'jingle' &&
         Date.now() - Date.parse(currentEntry.track.createdAt) < NEW_FOR_MS
   const grid = gridLine(program)
+  // What a like goes to: the music track on air (not a jingle or an announcement).
+  const likeTrackId =
+    fallback && fallbackItem
+      ? fallbackItem.kind === 'jingle' || fallbackItem.kind === 'timer'
+        ? undefined
+        : fallbackItem.track.id
+      : currentEntry && currentEntry.track.kind !== 'jingle'
+        ? currentEntry.track.id
+        : undefined
 
   const showConnecting = userStarted && !isPaused && isBuffering
 
@@ -759,7 +790,7 @@ export function RadioScreen() {
                 and pause are guaranteed the same visual style everywhere. */}
             {userStarted && !isPaused ? <span className="icon-pause" /> : <span className="icon-play" />}
           </button>
-          <HeartReactions />
+          <HeartReactions trackId={likeTrackId} />
         </div>
 
         {connectError && (

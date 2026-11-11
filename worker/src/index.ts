@@ -9,14 +9,14 @@ import {
   autoHitIds,
   feedVpsQueue,
   isVpsUp,
-  listQueued,
+  listUpcoming,
   planAhead,
   programNow,
   programView,
-  queueNext,
+  queueAt,
+  removeUpcoming,
   replanFuture,
   skipCurrent,
-  unqueue,
 } from './program'
 
 export { Presence } from './presence'
@@ -65,7 +65,7 @@ function toEntry(r: TrackRow) {
       durationSeconds: r.duration_seconds,
       fileSizeBytes: r.file_size_bytes,
       isEnabled: r.is_enabled === 1,
-      kind: r.kind === 'jingle' ? 'jingle' : 'track',
+      kind: r.kind === 'jingle' || r.kind === 'promo' ? r.kind : 'track',
       isHit: r.is_hit === 1,
       createdAt: r.created_at,
     },
@@ -77,7 +77,8 @@ const TRACK_SELECT = `select t.id, t.title, t.artist, t.file_path, t.cover_path,
   from playlist_items p join tracks t on t.id = p.track_id`
 
 async function listPlaylist(env: Env, includeDisabled: boolean): Promise<TrackRow[]> {
-  const where = includeDisabled ? '' : ' where t.is_enabled = 1'
+  // Announcements air only by timer, so listeners' playlists never include them.
+  const where = includeDisabled ? '' : " where t.is_enabled = 1 and t.kind != 'promo'"
   const { results } = await env.DB.prepare(`${TRACK_SELECT}${where} order by p.position asc, p.created_at asc`).all<TrackRow>()
   return results
 }
@@ -226,7 +227,7 @@ async function handleUpdateTrack(req: Request, env: Env, id: string): Promise<Re
     values.push(body.isHit ? 1 : 0)
   }
   if (body.kind !== undefined) {
-    if (body.kind !== 'track' && body.kind !== 'jingle') return json({ error: 'kind must be track or jingle' }, 400)
+    if (body.kind !== 'track' && body.kind !== 'jingle' && body.kind !== 'promo') return json({ error: 'kind must be track, jingle or promo' }, 400)
     sets.push('kind = ?')
     values.push(body.kind)
   }
@@ -237,7 +238,7 @@ async function handleUpdateTrack(req: Request, env: Env, id: string): Promise<Re
     .run()
   if (meta.changes === 0) return json({ error: 'not found' }, 404)
   // A track taken off air must not stay in what is already planned.
-  if (body.isEnabled === false) await replanFuture(env, Date.now())
+  if (body.isEnabled === false || body.kind !== undefined) await replanFuture(env, Date.now())
   return json({ ok: true })
 }
 
@@ -248,8 +249,7 @@ async function handleDelete(env: Env, id: string): Promise<Response> {
   if (!track) return json({ error: 'not found' }, 404)
   // playlist_items and folder_tracks rows go with it (ON DELETE CASCADE).
   await env.DB.prepare('delete from tracks where id = ?').bind(id).run()
-  await env.DB.prepare('delete from program where track_id = ? and starts_at > ?').bind(id, nowIso()).run()
-  await planAhead(env, Date.now(), true)
+  await replanFuture(env, Date.now())
   const keys = [track.file_path, ...(track.cover_path ? [track.cover_path] : [])]
   await env.MEDIA.delete(keys)
   return json({ ok: true })
@@ -518,9 +518,20 @@ async function handleRotation(env: Env): Promise<Response> {
   ])
   const memberships: Record<string, string[]> = {}
   for (const l of links.results as { folder_id: string; track_id: string }[]) (memberships[l.track_id] ??= []).push(l.folder_id)
+  const [likes, timers] = await env.DB.batch([
+    env.DB.prepare('select track_id, count(*) as n from track_likes group by track_id'),
+    env.DB.prepare('select id, track_id, fire_at, minute from track_timers order by coalesce(fire_at, \'\'), minute'),
+  ])
   return json({
     folders: folders.results,
     memberships,
+    likes: Object.fromEntries((likes.results as { track_id: string; n: number }[]).map((r) => [r.track_id, r.n])),
+    timers: (timers.results as { id: number; track_id: string; fire_at: string | null; minute: number | null }[]).map((r) => ({
+      id: r.id,
+      trackId: r.track_id,
+      fireAt: r.fire_at,
+      minute: r.minute,
+    })),
     autoHitIds: await autoHitIds(env, Date.now()),
     slots: (slots.results as Record<string, unknown>[]).map((r) => ({
       id: r.id,
@@ -544,6 +555,79 @@ async function handleSetTrackFolders(req: Request, env: Env, trackId: string): P
     ...ids.map((id) => env.DB.prepare('insert into folder_tracks (folder_id, track_id) values (?, ?)').bind(id, trackId)),
   ])
   return json({ ok: true, folderIds: ids })
+}
+
+// ---------- timers (admin): a track at an exact Moscow time ----------
+
+async function handleAddTimer(req: Request, env: Env): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as { trackId?: string; time?: string; daily?: boolean } | null
+  const m = /^(\d{1,2}):(\d{2})$/.exec(body?.time ?? '')
+  if (!body?.trackId || !m || Number(m[1]) > 23 || Number(m[2]) > 59) return json({ error: 'Нужны трек и время ЧЧ:ММ' }, 400)
+  const track = await env.DB.prepare('select id from tracks where id = ?').bind(body.trackId).first()
+  if (!track) return json({ error: 'Трек не найден' }, 404)
+  const minute = Number(m[1]) * 60 + Number(m[2])
+  const now = Date.now()
+  let fireAt: string | null = null
+  if (!body.daily) {
+    // The next time the Moscow clock (UTC+3) shows this time.
+    const offset = 180 * 60_000
+    const dayStart = Math.floor((now + offset) / 86_400_000) * 86_400_000 - offset
+    let at = dayStart + minute * 60_000
+    if (at <= now + 30_000) at += 86_400_000
+    fireAt = new Date(at).toISOString()
+  }
+  await env.DB.prepare('insert into track_timers (track_id, fire_at, minute, created_at) values (?, ?, ?, ?)')
+    .bind(body.trackId, fireAt, body.daily ? minute : null, nowIso())
+    .run()
+  await planAhead(env, now, true)
+  await dropProgramCache()
+  return json({ ok: true, fireAt })
+}
+
+async function handleDeleteTimer(env: Env, id: number): Promise<Response> {
+  const row = await env.DB.prepare('select track_id from track_timers where id = ?').bind(id).first<{ track_id: string }>()
+  if (!row) return json({ ok: true })
+  await env.DB.batch([
+    env.DB.prepare('delete from track_timers where id = ?').bind(id),
+    // Its plays that have not started yet go too.
+    env.DB.prepare("delete from program where kind = 'timer' and track_id = ? and starts_at > ?").bind(row.track_id, nowIso()),
+  ])
+  await replanFuture(env, Date.now())
+  await dropProgramCache()
+  return json({ ok: true })
+}
+
+// ---------- likes: one per person per track ----------
+
+async function likeUser(req: Request, env: Env, device: unknown): Promise<string | null> {
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  const claims = token ? await verifyJwt(token, env.JWT_SECRET) : null
+  if (claims?.sub) return `tg:${claims.sub}`
+  return typeof device === 'string' && /^[A-Za-z0-9-]{16,64}$/.test(device) ? `dev:${device}` : null
+}
+
+async function likeState(env: Env, trackId: string, user: string | null): Promise<{ count: number; liked: boolean }> {
+  const [count, mine] = await env.DB.batch([
+    env.DB.prepare('select count(*) as n from track_likes where track_id = ?').bind(trackId),
+    env.DB.prepare('select 1 as ok from track_likes where track_id = ? and user_key = ?').bind(trackId, user ?? ''),
+  ])
+  return { count: Number((count.results[0] as { n: number } | undefined)?.n ?? 0), liked: mine.results.length > 0 }
+}
+
+async function handleGetLike(req: Request, env: Env, url: URL): Promise<Response> {
+  const trackId = url.searchParams.get('trackId') ?? ''
+  if (!trackId) return json({ error: 'trackId required' }, 400)
+  return json(await likeState(env, trackId, await likeUser(req, env, url.searchParams.get('device'))))
+}
+
+async function handleLike(req: Request, env: Env): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as { trackId?: string; device?: string } | null
+  const user = await likeUser(req, env, body?.device)
+  if (!body?.trackId || !user) return json({ error: 'trackId required' }, 400)
+  const track = await env.DB.prepare("select id from tracks where id = ? and kind = 'track'").bind(body.trackId).first()
+  if (!track) return json({ error: 'Трек не найден' }, 404)
+  await env.DB.prepare('insert or ignore into track_likes (track_id, user_key, created_at) values (?, ?, ?)').bind(body.trackId, user, nowIso()).run()
+  return json(await likeState(env, body.trackId, user))
 }
 
 /** Now / next / grid for the app. Cached a few seconds (every open app polls
@@ -612,9 +696,10 @@ async function dropProgramCache(): Promise<void> {
 
 async function handleListQueue(env: Env): Promise<Response> {
   if (!(await isVpsUp(env))) {
-    // Without the VPS the queue lives on the planned timeline.
-    const queued = await listQueued(env, Date.now())
-    const ids = [...new Set(queued.map((q) => q.trackId))]
+    // Without the VPS the queue is the planned timeline itself: the next few
+    // items in order, each with its start time.
+    const upcoming = await listUpcoming(env, Date.now(), 12)
+    const ids = [...new Set(upcoming.map((q) => q.trackId))]
     const rows = ids.length
       ? (
           await env.DB.prepare(`${TRACK_SELECT} where t.id in (${ids.map(() => '?').join(',')})`)
@@ -624,9 +709,10 @@ async function handleListQueue(env: Env): Promise<Response> {
       : []
     const byId = new Map(rows.map((r) => [r.id, r]))
     return json({
-      entries: queued.flatMap((q) => {
+      mode: 'program',
+      entries: upcoming.flatMap((q) => {
         const row = byId.get(q.trackId)
-        return row ? [{ rid: q.id, ...toEntry(row) }] : []
+        return row ? [{ rid: q.id, startsAt: q.startsAt, airKind: q.kind, ...toEntry(row) }] : []
       }),
     })
   }
@@ -649,12 +735,12 @@ async function handleListQueue(env: Env): Promise<Response> {
 }
 
 async function handleQueueTrack(req: Request, env: Env): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { trackId?: string } | null
+  const body = (await req.json().catch(() => null)) as { trackId?: string; position?: number } | null
   if (!body?.trackId) return json({ error: 'trackId required' }, 400)
   const row = await env.DB.prepare(`${TRACK_SELECT} where t.id = ?`).bind(body.trackId).first<TrackRow>()
   if (!row) return json({ error: 'Трек не найден' }, 404)
   if (!(await isVpsUp(env))) {
-    await queueNext(env, Date.now(), row.id)
+    await queueAt(env, Date.now(), row.id, Number(body.position) || 1)
     await dropProgramCache()
     return json({ ok: true, mode: 'program' })
   }
@@ -772,6 +858,8 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
   if (m === 'GET' && path === '/api/up-next') return handleUpNext(env, ctx)
   if (m === 'GET' && path === '/api/history') return handleHistory(env, ctx)
   if (m === 'GET' && path === '/api/program') return handleProgram(env, ctx)
+  if (m === 'GET' && path === '/api/likes') return handleGetLike(req, env, url)
+  if (m === 'POST' && path === '/api/likes') return handleLike(req, env)
   const remind = path.match(/^\/api\/events\/([0-9a-f-]{36})\/remind$/)
   if (remind && m === 'POST') {
     const auth = await requireUser(req, env)
@@ -817,6 +905,9 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (m === 'GET' && path === '/api/admin/stats') return handleStats(env)
     if (m === 'GET' && path === '/api/admin/fallback-status') return handleFallbackStatus(env)
     if (m === 'GET' && path === '/api/admin/rotation') return handleRotation(env)
+    if (m === 'POST' && path === '/api/admin/timers') return handleAddTimer(req, env)
+    const timerId = path.match(/^\/api\/admin\/timers\/(\d+)$/)
+    if (timerId && m === 'DELETE') return handleDeleteTimer(env, Number(timerId[1]))
     const trackFolders = path.match(/^\/api\/admin\/tracks\/([0-9a-f-]{36})\/folders$/)
     if (trackFolders && m === 'PUT') return handleSetTrackFolders(req, env, trackFolders[1])
     // Cheap (no database): the dashboard polls this every few seconds.
@@ -841,7 +932,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     const queued = path.match(/^\/api\/admin\/queue\/(\d+)$/)
     if (queued && m === 'DELETE') {
       if (!(await isVpsUp(env))) {
-        await unqueue(env, Date.now(), Number(queued[1]))
+        await removeUpcoming(env, Date.now(), Number(queued[1]))
         await dropProgramCache()
         return json({ ok: true, mode: 'program' })
       }

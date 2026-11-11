@@ -1,5 +1,26 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { sendHeart, subscribeHearts } from '../lib/presence'
+import { api } from '../lib/api'
+
+// One like per person per track. Inside Telegram the backend knows who is
+// asking; on the web this phone gets its own random id.
+function deviceId(): string {
+  try {
+    let id = localStorage.getItem('bfm_device')
+    if (!id) {
+      id = crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
+      localStorage.setItem('bfm_device', id)
+    }
+    return id
+  } catch {
+    return ''
+  }
+}
+
+interface LikeState {
+  count: number
+  liked: boolean
+}
 
 // Hearts, in the bigunder.ru look: a debossed button and plain white hearts
 // floating up from it.
@@ -33,7 +54,22 @@ function WhiteHeart({ size }: { size: number }) {
   )
 }
 
-export function HeartReactions() {
+/** `trackId`: the track on air, when it is one that can be liked (not a jingle or an announcement). */
+export function HeartReactions({ trackId }: { trackId?: string }) {
+  const [like, setLike] = useState<LikeState | null>(null)
+  const likeTrackRef = useRef<string | undefined>(undefined)
+
+  useEffect(() => {
+    likeTrackRef.current = trackId
+    setLike(null)
+    if (!trackId) return
+    api<LikeState>(`/api/likes?trackId=${encodeURIComponent(trackId)}&device=${encodeURIComponent(deviceId())}`)
+      .then((state) => {
+        if (likeTrackRef.current === trackId) setLike(state)
+      })
+      .catch(() => {})
+  }, [trackId])
+
   const [floaters, setFloaters] = useState<Floater[]>([])
   const [pressed, setPressed] = useState(false)
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -63,6 +99,14 @@ export function HeartReactions() {
   )
 
   function handleTap() {
+    // Already liked this track (or nothing to like right now): one like each.
+    if (!trackId || like?.liked) return
+    setLike({ count: (like?.count ?? 0) + 1, liked: true })
+    api<LikeState>('/api/likes', { method: 'POST', body: { trackId, device: deviceId() } })
+      .then((state) => {
+        if (likeTrackRef.current === trackId) setLike(state)
+      })
+      .catch(() => {})
     sendHeart()
     spawn(1, true)
     navigator.vibrate?.(8)
@@ -95,12 +139,13 @@ export function HeartReactions() {
         type="button"
         className={`hearts__button${pressed ? ' is-pressed' : ''}`}
         onClick={handleTap}
-        aria-label="Отправить сердечко в эфир"
+        aria-label={like?.liked ? 'Лайк уже стоит' : 'Поставить лайк треку'}
       >
         <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
-          <path d={HEART_PATH} fill={pressed ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.4" />
+          <path d={HEART_PATH} fill={pressed || like?.liked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.4" />
         </svg>
       </button>
+      {like && like.count > 0 && <span className="hearts__count">{like.count}</span>}
     </div>
   )
 }

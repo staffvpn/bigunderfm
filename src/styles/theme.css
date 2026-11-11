@@ -928,6 +928,50 @@ button {
   color: var(--color-muted);
 }
 
+.admin-library__likes {
+  color: var(--color-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* The small form under a track: its place in the air, or a timer. */
+.admin-library__panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: var(--color-surface);
+  font-size: 12px;
+}
+
+.admin-library__panel > span {
+  flex-basis: 100%;
+}
+
+.admin-library__panel-input {
+  width: 110px;
+}
+
+.admin-library__panel-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Likes for the track on air, under the heart button. */
+.hearts__count {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-muted);
+}
+
 /* "Play next" queue, above the search. */
 .admin-library__queue {
   border: 1px solid var(--color-surface-2);

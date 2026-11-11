@@ -18,7 +18,29 @@ interface Rotation {
   folders: Folder[]
   memberships: Record<string, string[]>
   autoHitIds: string[]
+  /** Likes per track id (one per listener). */
+  likes: Record<string, number>
+  timers: Timer[]
 }
+/** Plays the track at an exact Moscow time: once (fireAt) or every day (minute of the day). */
+interface Timer {
+  id: number
+  trackId: string
+  fireAt: string | null
+  minute: number | null
+}
+const PROMOS = '__promos'
+const MSK = { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' } as const
+const mskTime = (iso: string) => new Date(iso).toLocaleTimeString('ru-RU', MSK)
+function timerLabel(t: Timer): string {
+  if (t.fireAt) {
+    const day = new Date(t.fireAt).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit' })
+    return `${day} в ${mskTime(t.fireAt)}`
+  }
+  const m = t.minute ?? 0
+  return `каждый день в ${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+}
+const AIR_KIND_NOTE: Record<string, string> = { jingle: 'джингл', queued: 'поставлен вручную', timer: 'по таймеру', hit: 'хит', new: 'новинка' }
 const NO_FOLDER = '__none'
 const HITS = '__hits'
 const JINGLES = '__jingles'
@@ -58,7 +80,6 @@ export function AdminLibrary() {
   const [savingEdit, setSavingEdit] = useState(false)
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [queueError, setQueueError] = useState<string | null>(null)
-  const [queueingId, setQueueingId] = useState<string | null>(null)
 
   const [rotation, setRotation] = useState<Rotation | null>(null)
   // 'all', a folder id, or one of NO_FOLDER / HITS / JINGLES.
@@ -97,16 +118,57 @@ export function AdminLibrary() {
     }
   }
 
-  async function toggleJingle(trackId: string, isJingle: boolean) {
-    setEntries((prev) =>
-      prev.map((e) => (e.track.id === trackId ? { ...e, track: { ...e.track, kind: isJingle ? 'track' : 'jingle' } } : e)),
-    )
+  async function setKind(trackId: string, kind: 'track' | 'jingle' | 'promo') {
+    setEntries((prev) => prev.map((e) => (e.track.id === trackId ? { ...e, track: { ...e.track, kind } } : e)))
     try {
-      await api(`/api/admin/tracks/${trackId}`, { method: 'PATCH', body: { kind: isJingle ? 'track' : 'jingle' } })
+      await api(`/api/admin/tracks/${trackId}`, { method: 'PATCH', body: { kind } })
     } catch (err) {
       setResults([`ОШИБКА: ${(err as Error).message}`])
       reload()
     }
+    reloadQueue()
+  }
+
+  // The small form open under one track: its place in the air, or a timer.
+  const [panel, setPanel] = useState<{ trackId: string; type: 'number' | 'timer' } | null>(null)
+  const [placeValue, setPlaceValue] = useState('1')
+  const [timeValue, setTimeValue] = useState('19:00')
+  const [timerDaily, setTimerDaily] = useState(false)
+  const [savingPanel, setSavingPanel] = useState(false)
+
+  async function savePlace(trackId: string) {
+    setSavingPanel(true)
+    try {
+      await queueTrack(trackId, Math.max(1, Number(placeValue) || 1))
+      setPanel(null)
+    } catch (err) {
+      setQueueError((err as Error).message)
+    }
+    setSavingPanel(false)
+    reloadQueue()
+  }
+
+  async function saveTimer(trackId: string) {
+    setSavingPanel(true)
+    try {
+      await api('/api/admin/timers', { method: 'POST', body: { trackId, time: timeValue, daily: timerDaily } })
+      setPanel(null)
+    } catch (err) {
+      setResults([`ОШИБКА: ${(err as Error).message}`])
+    }
+    setSavingPanel(false)
+    reloadRotation()
+    reloadQueue()
+  }
+
+  async function deleteTimer(id: number) {
+    try {
+      await api(`/api/admin/timers/${id}`, { method: 'DELETE' })
+    } catch (err) {
+      setResults([`ОШИБКА: ${(err as Error).message}`])
+    }
+    reloadRotation()
+    reloadQueue()
   }
 
   async function reload() {
@@ -193,18 +255,6 @@ export function AdminLibrary() {
       setResults([`ОШИБКА УДАЛЕНИЯ: ${(err as Error).message}`])
     }
     reload()
-  }
-
-  async function handleQueue(trackId: string) {
-    setQueueingId(trackId)
-    try {
-      await queueTrack(trackId)
-    } catch (err) {
-      setQueueError((err as Error).message)
-    } finally {
-      setQueueingId(null)
-    }
-    reloadQueue()
   }
 
   async function handleUnqueue(rid: number) {
@@ -373,9 +423,10 @@ export function AdminLibrary() {
   const folderOf = (trackId: string) => rotation?.memberships[trackId] ?? []
   const autoHits = new Set(rotation?.autoHitIds ?? [])
   const inFilter = (e: PlaylistEntry) => {
-    const isJingle = e.track.kind === 'jingle'
+    const isJingle = e.track.kind === 'jingle' || e.track.kind === 'promo'
     if (folderFilter === 'all') return true
-    if (folderFilter === JINGLES) return isJingle
+    if (folderFilter === JINGLES) return e.track.kind === 'jingle'
+    if (folderFilter === PROMOS) return e.track.kind === 'promo'
     if (isJingle) return false
     if (folderFilter === HITS) return !!e.track.isHit || autoHits.has(e.track.id)
     if (folderFilter === NO_FOLDER) return folderOf(e.track.id).length === 0
@@ -385,8 +436,9 @@ export function AdminLibrary() {
   const searching = searchTerm !== '' || folderFilter !== 'all'
   const filterCount = (id: string) => {
     return entries.filter((e) => {
-      const isJingle = e.track.kind === 'jingle'
-      if (id === JINGLES) return isJingle
+      const isJingle = e.track.kind === 'jingle' || e.track.kind === 'promo'
+      if (id === JINGLES) return e.track.kind === 'jingle'
+      if (id === PROMOS) return e.track.kind === 'promo'
       if (isJingle) return false
       if (id === HITS) return !!e.track.isHit || autoHits.has(e.track.id)
       if (id === NO_FOLDER) return folderOf(e.track.id).length === 0
@@ -400,6 +452,7 @@ export function AdminLibrary() {
         { id: NO_FOLDER, label: `Без папки ${filterCount(NO_FOLDER)}` },
         { id: HITS, label: `Хиты ${filterCount(HITS)}` },
         { id: JINGLES, label: `Джинглы ${filterCount(JINGLES)}` },
+        { id: PROMOS, label: `Анонсы ${filterCount(PROMOS)}` },
       ]
     : []
   const visibleEntries = searching
@@ -469,7 +522,7 @@ export function AdminLibrary() {
       </ul>
 
       <div className="admin-library__queue">
-        <span className="admin-library__queue-title">ИГРАЮТ СЛЕДУЮЩИМИ</span>
+        <span className="admin-library__queue-title">ДАЛЬШЕ В ЭФИРЕ</span>
         {queue.length === 0 ? (
           <p className="admin-library__rotation-summary">Пусто</p>
         ) : (
@@ -477,11 +530,17 @@ export function AdminLibrary() {
             {queue.map((q, i) => (
               <li key={q.rid}>
                 <span className="admin-library__label">
-                  {i + 1}. {q.track.artist} — {q.track.title}
+                  {i + 1}. {q.startsAt ? `${mskTime(q.startsAt)} ` : ''}
+                  {q.track.artist} — {q.track.title}
+                  {q.airKind && AIR_KIND_NOTE[q.airKind] && (
+                    <span className="admin-library__queue-pos"> ({AIR_KIND_NOTE[q.airKind]})</span>
+                  )}
                 </span>
-                <button onClick={() => handleUnqueue(q.rid)} aria-label="Убрать из очереди">
-                  ✕
-                </button>
+                {q.airKind !== 'timer' && (
+                  <button onClick={() => handleUnqueue(q.rid)} aria-label="Убрать из эфира">
+                    ✕
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -513,7 +572,8 @@ export function AdminLibrary() {
           <p className="admin-library__hint">
             Эфир собирается сам: утром, днём, вечером и ночью играет своя папка, шоу выходят из своих папок по
             расписанию, хиты повторяются каждые несколько часов. Порядок внутри папки перемешивается сам и каждый
-            день другой, двигать треки не нужно: чтобы трек прозвучал сейчас, нажми «Играть следующим». Нажми на папку под треком, чтобы положить его туда
+            день другой. «Номер в эфире» ставит трек на нужное место в списке «Дальше в эфире», «Таймер» включает его
+            ровно в заданное время. Анонс звучит только по таймеру. Нажми на папку под треком, чтобы положить его туда
             или убрать. Трек без папки играет в любое время суток.
           </p>
         </>
@@ -562,17 +622,16 @@ export function AdminLibrary() {
                 <div className="admin-library__row">
                   <span className="admin-library__label">
                     {entry.track.artist} — {entry.track.title}
+                    {(rotation?.likes[entry.track.id] ?? 0) > 0 && (
+                      <span className="admin-library__likes"> лайки: {rotation?.likes[entry.track.id]}</span>
+                    )}
                   </span>
                 </div>
                 {rotation && (
                   <div className="admin-library__chips admin-library__chips--track">
-                    {entry.track.kind === 'jingle' ? (
-                      <button
-                        type="button"
-                        className="admin-library__chip is-on"
-                        onClick={() => toggleJingle(entry.track.id, true)}
-                      >
-                        Джингл
+                    {entry.track.kind === 'jingle' || entry.track.kind === 'promo' ? (
+                      <button type="button" className="admin-library__chip is-on" onClick={() => setKind(entry.track.id, 'track')}>
+                        {entry.track.kind === 'jingle' ? 'Джингл' : 'Анонс: только по таймеру'}
                       </button>
                     ) : (
                       <>
@@ -593,17 +652,70 @@ export function AdminLibrary() {
                         >
                           {autoHits.has(entry.track.id) && !entry.track.isHit ? 'Хит (по сердечкам)' : 'Хит'}
                         </button>
-                        <button type="button" className="admin-library__chip" onClick={() => toggleJingle(entry.track.id, false)}>
+                        <button type="button" className="admin-library__chip" onClick={() => setKind(entry.track.id, 'jingle')}>
                           Джингл
+                        </button>
+                        <button type="button" className="admin-library__chip" onClick={() => setKind(entry.track.id, 'promo')}>
+                          Анонс
                         </button>
                       </>
                     )}
+                    {rotation.timers
+                      .filter((t) => t.trackId === entry.track.id)
+                      .map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          className="admin-library__chip is-on"
+                          onClick={() => deleteTimer(t.id)}
+                          aria-label="Убрать таймер"
+                        >
+                          Таймер: {timerLabel(t)} ✕
+                        </button>
+                      ))}
+                  </div>
+                )}
+                {panel?.trackId === entry.track.id && panel.type === 'number' && (
+                  <div className="admin-library__panel">
+                    <span>Каким по счёту в эфире (1 — сразу после текущего):</span>
+                    <input
+                      className="admin-library__edit-input admin-library__panel-input"
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={12}
+                      value={placeValue}
+                      onChange={(e) => setPlaceValue(e.target.value)}
+                    />
+                    <button onClick={() => savePlace(entry.track.id)} disabled={savingPanel}>
+                      {savingPanel ? '...' : 'Поставить'}
+                    </button>
+                    <button onClick={() => setPanel(null)}>Отмена</button>
+                  </div>
+                )}
+                {panel?.trackId === entry.track.id && panel.type === 'timer' && (
+                  <div className="admin-library__panel">
+                    <span>Включить ровно в (время московское):</span>
+                    <input
+                      className="admin-library__edit-input admin-library__panel-input"
+                      type="time"
+                      value={timeValue}
+                      onChange={(e) => setTimeValue(e.target.value)}
+                    />
+                    <label className="admin-library__panel-check">
+                      <input type="checkbox" checked={timerDaily} onChange={(e) => setTimerDaily(e.target.checked)} /> каждый день
+                    </label>
+                    <button onClick={() => saveTimer(entry.track.id)} disabled={savingPanel || !timeValue}>
+                      {savingPanel ? '...' : 'Включить'}
+                    </button>
+                    <button onClick={() => setPanel(null)}>Отмена</button>
                   </div>
                 )}
                 <div className="admin-library__actions">
-                  <button onClick={() => handleQueue(entry.track.id)} disabled={queueingId === entry.track.id}>
-                    {queueingId === entry.track.id ? '...' : 'Играть следующим'}
-                  </button>
+                  {entry.track.kind !== 'promo' && (
+                    <button onClick={() => setPanel({ trackId: entry.track.id, type: 'number' })}>Номер в эфире</button>
+                  )}
+                  <button onClick={() => setPanel({ trackId: entry.track.id, type: 'timer' })}>Таймер</button>
                   <button onClick={() => startEdit(entry)}>Изменить</button>
                   <button onClick={() => handleToggle(entry.track.id, entry.track.isEnabled)}>
                     {entry.track.isEnabled ? 'Выключить' : 'Включить'}

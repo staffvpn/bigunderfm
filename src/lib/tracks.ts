@@ -11,7 +11,7 @@ export interface Track {
   fileSizeBytes: number
   isEnabled: boolean
   /** 'jingle' rows are station idents, played between tracks by the rotation. */
-  kind?: 'track' | 'jingle'
+  kind?: 'track' | 'jingle' | 'promo'
   isHit?: boolean
   createdAt?: string
 }
@@ -44,6 +44,9 @@ export function toPlaylistTracks(entries: PlaylistEntry[]): PlaylistTrack[] {
 /** A track waiting in the admin "play next" queue; rid identifies it on the radio server. */
 export interface QueueEntry extends PlaylistEntry {
   rid: number
+  /** Set when the list is the planned air (radio server down): start time and why it is there. */
+  startsAt?: string
+  airKind?: 'track' | 'hit' | 'new' | 'jingle' | 'queued' | 'timer'
 }
 
 export async function fetchQueue(): Promise<QueueEntry[]> {
@@ -51,8 +54,9 @@ export async function fetchQueue(): Promise<QueueEntry[]> {
   return data.entries
 }
 
-export async function queueTrack(trackId: string): Promise<void> {
-  await api('/api/admin/queue', { method: 'POST', body: { trackId } })
+/** Puts a track at place `position` in what plays next (1 = right after the current track). */
+export async function queueTrack(trackId: string, position = 1): Promise<void> {
+  await api('/api/admin/queue', { method: 'POST', body: { trackId, position } })
 }
 
 export async function unqueueTrack(rid: number): Promise<void> {
