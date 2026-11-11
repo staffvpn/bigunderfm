@@ -4,13 +4,51 @@
 // ever moves to a real domain.
 const DIRECT_HOST = 'https://195-208-124-129.sslip.io'
 // Cloudflare relay of the status page only (functions/status-json.xsl.ts), so the
-// admin numbers still show for someone whose network or VPN cannot open the
-// server itself. The audio is not relayed: Cloudflare cannot carry a live stream
-// at full speed.
+// admin numbers still show when the server itself cannot be opened.
 const PROXY_HOST = 'https://bigunderfm.pages.dev'
 
-export const streamUrl = () => `${DIRECT_HOST}/radio`
-export const statusUrl = () => `${DIRECT_HOST}/status-json.xsl`
+// Listeners whose network or VPN cannot open the server's own address (some
+// VPN exits cannot) reach the stream through a Cloudflare tunnel the server
+// keeps open; the Worker hands out its address with the program.
+const TUNNEL_KEY = 'bfm_tunnel'
+const ROUTE_KEY = 'bfm_via_tunnel'
+const ROUTE_TTL_MS = 30 * 60 * 1000
+function readStore(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+function writeStore(key: string, value: string | null) {
+  try {
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
+  } catch {
+    // storage unavailable - not important
+  }
+}
+
+let tunnelHost: string | null = readStore(TUNNEL_KEY)
+let streamHost = DIRECT_HOST
+let resolveTunnelKnown: () => void = () => {}
+const tunnelKnown = new Promise<void>((resolve) => {
+  resolveTunnelKnown = resolve
+})
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+export function setTunnelHost(host: string | null) {
+  tunnelHost = host
+  writeStore(TUNNEL_KEY, host)
+  resolveTunnelKnown()
+}
+
+function tunnelRemembered(): boolean {
+  return Date.now() - Number(readStore(ROUTE_KEY)) < ROUTE_TTL_MS
+}
+
+export const streamUrl = () => `${streamHost}/radio`
+export const statusUrl = () => `${streamHost}/status-json.xsl`
 
 async function fetchStatusFrom(host: string, timeoutMs: number): Promise<any | null> {
   const ctrl = new AbortController()
@@ -25,6 +63,38 @@ async function fetchStatusFrom(host: string, timeoutMs: number): Promise<any | n
   } finally {
     clearTimeout(timer)
   }
+}
+
+/** Which route reaches the stream: the server directly, else the tunnel. Switches to whichever answers. */
+async function pickRoute(timeoutMs: number): Promise<any | null> {
+  const direct = fetchStatusFrom(DIRECT_HOST, timeoutMs)
+  const tunnel = (async () => {
+    await Promise.race([tunnelKnown, sleep(2000)])
+    return tunnelHost ? fetchStatusFrom(tunnelHost, timeoutMs) : null
+  })()
+  const useDirect = (data: any) => {
+    streamHost = DIRECT_HOST
+    writeStore(ROUTE_KEY, null)
+    return data
+  }
+  const useTunnel = (data: any) => {
+    streamHost = tunnelHost!
+    writeStore(ROUTE_KEY, String(Date.now()))
+    return data
+  }
+  if (tunnelHost && tunnelRemembered()) {
+    const t = await tunnel
+    if (t) return useTunnel(t)
+    const d = await direct
+    return d ? useDirect(d) : null
+  }
+  // Direct first; a slow direct route gives way to the tunnel if that answers.
+  const first = await Promise.race([direct, sleep(1500).then(() => 'slow' as const)])
+  if (first && first !== 'slow') return useDirect(first)
+  const t = await tunnel
+  if (t) return useTunnel(t)
+  const d = first === 'slow' ? await direct : null
+  return d ? useDirect(d) : null
 }
 
 // Public R2 bucket the library lives in (same base the Worker hands the VPS).
@@ -46,7 +116,7 @@ export function mediaUrl(filePath: string): string {
  * radio used to go silent with it.
  */
 export async function isStreamServerUp(timeoutMs = 6000): Promise<boolean> {
-  return (await fetchStatusFrom(DIRECT_HOST, timeoutMs)) !== null
+  return (await pickRoute(timeoutMs)) !== null
 }
 
 // Icecast's status-json.xsl escapes non-ASCII in text fields as numeric
@@ -79,7 +149,10 @@ export interface IcecastStatus {
  */
 export async function fetchIcecastStatus(): Promise<IcecastStatus | null> {
   try {
-    const data = (await fetchStatusFrom(DIRECT_HOST, 6000)) ?? (await fetchStatusFrom(PROXY_HOST, 6000))
+    const data =
+      (await fetchStatusFrom(streamHost, 6000)) ??
+      (await fetchStatusFrom(DIRECT_HOST, 6000)) ??
+      (await fetchStatusFrom(PROXY_HOST, 6000))
     const source = data?.icestats?.source
     if (!source) return null
 

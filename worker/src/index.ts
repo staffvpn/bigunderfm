@@ -824,6 +824,19 @@ async function handleInternal(req: Request, env: Env, path: string): Promise<Res
     return new Response(body, { headers: { ...CORS_HEADERS, 'Content-Type': 'text/tab-separated-values; charset=utf-8' } })
   }
 
+  // The server reports its Cloudflare tunnel address here (listeners whose network or
+  // VPN cannot reach the server directly use it for the stream).
+  if (req.method === 'POST' && path === '/internal/stream-host') {
+    const body = (await req.json().catch(() => null)) as { host?: string } | null
+    const host = String(body?.host ?? '')
+    if (!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(host)) return json({ error: 'bad host' }, 400)
+    await env.DB.prepare("insert into settings (key, value) values ('stream_tunnel', ?) on conflict(key) do update set value = excluded.value")
+      .bind(host)
+      .run()
+    await dropProgramCache()
+    return json({ ok: true })
+  }
+
   // Used once to move files from Supabase Storage into R2.
   if (req.method === 'PUT' && path.startsWith('/internal/import/')) {
     const key = decodeURIComponent(path.slice('/internal/import/'.length))

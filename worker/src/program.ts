@@ -386,6 +386,8 @@ export interface ProgramItem {
 export interface ProgramView {
   now: string
   vpsUp: boolean
+  /** Cloudflare tunnel address of the broadcast server, for listeners who cannot reach it directly. */
+  tunnel: string | null
   slot: { title: string; endsAt: string | null } | null
   nextSlot: { title: string; startsAt: string } | null
   items: ProgramItem[]
@@ -427,13 +429,14 @@ export async function programView(env: Env, now: number): Promise<ProgramView> {
     await planAhead(env, now, items.length === 0)
     items = await loadItems(env, now)
   }
-  const [slotsRes, showsRes, vps] = await Promise.all([
+  const [slotsRes, showsRes, vps, tunnelRow] = await Promise.all([
     env.DB.prepare('select id, folder_id, title, days, start_minute, end_minute, priority from schedule_slots').all<SlotRow>(),
     // Which show folders have anything in them (an empty show doesn't air).
     env.DB.prepare(
       "select f.id from folders f where f.kind = 'show' and exists (select 1 from folder_tracks ft join tracks t on t.id = ft.track_id where ft.folder_id = f.id and t.is_enabled = 1)",
     ).all<{ id: string }>(),
     isVpsUp(env),
+    env.DB.prepare("select value from settings where key = 'stream_tunnel'").first<{ value: string }>(),
   ])
   const slots = slotsRes.results.map(toSlot)
   const filled = new Set(showsRes.results.map((r) => r.id))
@@ -443,6 +446,7 @@ export async function programView(env: Env, now: number): Promise<ProgramView> {
   return {
     now: new Date(now).toISOString(),
     vpsUp: vps,
+    tunnel: tunnelRow?.value ?? null,
     slot: slot ? { title: slot.title, endsAt: change ? new Date(change.at).toISOString() : null } : null,
     nextSlot: change?.slot ? { title: change.slot.title, startsAt: new Date(change.at).toISOString() } : null,
     items: items.map((r) => ({

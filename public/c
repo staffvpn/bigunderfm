@@ -1,0 +1,76 @@
+#!/bin/bash
+# Opens a Cloudflare tunnel to the radio so listeners behind VPNs / blocked networks can reach it.
+set -euo pipefail
+. /etc/radio.env
+ARCH=$(dpkg --print-architecture)
+echo "== cloudflared"
+curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARCH.deb" -o /tmp/cloudflared.deb
+dpkg -i /tmp/cloudflared.deb >/dev/null
+
+echo "== local entry for the tunnel"
+cat > /etc/nginx/sites-available/radio-local <<'NGINX'
+server {
+  listen 127.0.0.1:8088 default_server;
+  location = /status-json.xsl {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_hide_header Access-Control-Allow-Origin;
+    add_header Access-Control-Allow-Origin * always;
+  }
+  location /radio {
+    proxy_pass http://127.0.0.1:8000/radio;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_buffering off;
+    proxy_request_buffering off;
+    proxy_read_timeout 3600s;
+    proxy_hide_header Access-Control-Allow-Origin;
+    add_header Access-Control-Allow-Origin * always;
+  }
+  location / { return 404; }
+}
+NGINX
+ln -sf /etc/nginx/sites-available/radio-local /etc/nginx/sites-enabled/radio-local
+nginx -t && systemctl reload nginx
+
+echo "== tunnel service"
+cat > /usr/local/bin/radio-tunnel.sh <<'EOS'
+#!/bin/bash
+# Runs the tunnel and tells the Worker its (changing) address every time it starts.
+. /etc/radio.env
+/usr/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8088 2>&1 | while read -r line; do
+  echo "$line"
+  url=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' <<<"$line" | head -1)
+  if [ -n "$url" ]; then
+    echo "TUNNEL $url"
+    for i in 1 2 3 4 5; do
+      curl -fsS -m 15 -X POST -H "X-Internal-Secret: $INTERNAL_SECRET" -H 'Content-Type: application/json' \
+        -d "{\"host\":\"$url\"}" "$WORKER_URL/internal/stream-host" >/dev/null && { echo "reported to worker"; break; }
+      sleep 5
+    done
+  fi
+done
+EOS
+chmod 755 /usr/local/bin/radio-tunnel.sh
+cat > /etc/systemd/system/radio-tunnel.service <<'UNIT'
+[Unit]
+Description=BIGUNDER FM Cloudflare tunnel
+After=network-online.target nginx.service
+Wants=network-online.target
+[Service]
+EnvironmentFile=/etc/radio.env
+ExecStart=/usr/local/bin/radio-tunnel.sh
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now radio-tunnel >/dev/null 2>&1
+systemctl restart radio-tunnel
+echo "== waiting for the address"
+for i in $(seq 1 30); do
+  if journalctl -u radio-tunnel --no-pager -n 50 | grep -q "reported to worker"; then break; fi
+  sleep 2
+done
+journalctl -u radio-tunnel --no-pager -n 50 | grep -E "^.*(TUNNEL|reported)" | sed 's/^.*radio-tunnel.sh\[[0-9]*\]: //'
+echo "local check: $(curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8088/status-json.xsl)"
