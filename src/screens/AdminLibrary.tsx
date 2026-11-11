@@ -30,6 +30,12 @@ interface Timer {
   minute: number | null
 }
 const PROMOS = '__promos'
+const NEW = '__new'
+// A track is a "новинка" for two weeks after upload (the rotation gives it
+// extra spins for the same two weeks), then it shows up under "Без папки"
+// until someone files it.
+const NEW_FOR_MS = 14 * 86_400_000
+const isNewTrack = (e: PlaylistEntry) => !!e.track.createdAt && Date.now() - Date.parse(e.track.createdAt) < NEW_FOR_MS
 const MSK = { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' } as const
 const mskTime = (iso: string) => new Date(iso).toLocaleTimeString('ru-RU', MSK)
 function timerLabel(t: Timer): string {
@@ -429,7 +435,8 @@ export function AdminLibrary() {
     if (folderFilter === PROMOS) return e.track.kind === 'promo'
     if (isJingle) return false
     if (folderFilter === HITS) return !!e.track.isHit || autoHits.has(e.track.id)
-    if (folderFilter === NO_FOLDER) return folderOf(e.track.id).length === 0
+    if (folderFilter === NEW) return isNewTrack(e)
+    if (folderFilter === NO_FOLDER) return folderOf(e.track.id).length === 0 && !isNewTrack(e)
     return folderOf(e.track.id).includes(folderFilter)
   }
   // Searching or filtering shows a subset, where dragging to reorder makes no sense.
@@ -441,13 +448,15 @@ export function AdminLibrary() {
       if (id === PROMOS) return e.track.kind === 'promo'
       if (isJingle) return false
       if (id === HITS) return !!e.track.isHit || autoHits.has(e.track.id)
-      if (id === NO_FOLDER) return folderOf(e.track.id).length === 0
+      if (id === NEW) return isNewTrack(e)
+      if (id === NO_FOLDER) return folderOf(e.track.id).length === 0 && !isNewTrack(e)
       return folderOf(e.track.id).includes(id)
     }).length
   }
   const filterChips: { id: string; label: string }[] = rotation
     ? [
         { id: 'all', label: `Все ${entries.length}` },
+        { id: NEW, label: `Новинки ${filterCount(NEW)}` },
         ...rotation.folders.map((f) => ({ id: f.id, label: `${f.name} ${filterCount(f.id)}` })),
         { id: NO_FOLDER, label: `Без папки ${filterCount(NO_FOLDER)}` },
         { id: HITS, label: `Хиты ${filterCount(HITS)}` },
@@ -455,13 +464,16 @@ export function AdminLibrary() {
         { id: PROMOS, label: `Анонсы ${filterCount(PROMOS)}` },
       ]
     : []
-  const visibleEntries = searching
+  const filteredEntries = searching
     ? entries.filter(
         (e) => inFilter(e) && (searchTerm === '' || `${e.track.artist} ${e.track.title}`.toLowerCase().includes(searchTerm)),
       )
     : dragOrderIds
       ? dragOrderIds.map((id) => entries.find((e) => e.track.id === id)).filter((e): e is PlaylistEntry => !!e)
       : entries
+  // Most liked first; tracks with the same number of likes keep their order.
+  const likesOf = (e: PlaylistEntry) => rotation?.likes[e.track.id] ?? 0
+  const visibleEntries = [...filteredEntries].sort((a, b) => likesOf(b) - likesOf(a))
 
   // "В ротации" reflects what's actually broadcasting right now (enabled
   // tracks only) — computed from data already on hand rather than a
@@ -571,7 +583,8 @@ export function AdminLibrary() {
           </div>
           <p className="admin-library__hint">
             Эфир собирается сам: утром, днём, вечером и ночью играет своя папка, шоу выходят из своих папок по
-            расписанию, хиты повторяются каждые несколько часов. Порядок внутри папки перемешивается сам и каждый
+            расписанию, хиты повторяются каждые несколько часов. Новый трек две недели лежит в «Новинках» и звучит чаще, потом
+            переходит в «Без папки». Каждые 5 лайков делают трек хитом на неделю. Список отсортирован по лайкам. Порядок внутри папки перемешивается сам и каждый
             день другой. «Номер в эфире» ставит трек на нужное место в списке «Дальше в эфире», «Таймер» включает его
             ровно в заданное время. Анонс звучит только по таймеру. Нажми на папку под треком, чтобы положить его туда
             или убрать. Трек без папки играет в любое время суток.
@@ -650,7 +663,7 @@ export function AdminLibrary() {
                           className={`admin-library__chip admin-library__chip--hit${entry.track.isHit ? ' is-on' : ''}`}
                           onClick={() => toggleHit(entry.track.id, !!entry.track.isHit)}
                         >
-                          {autoHits.has(entry.track.id) && !entry.track.isHit ? 'Хит (по сердечкам)' : 'Хит'}
+                          {autoHits.has(entry.track.id) && !entry.track.isHit ? 'Хит на неделю (по лайкам)' : 'Хит'}
                         </button>
                         <button type="button" className="admin-library__chip" onClick={() => setKind(entry.track.id, 'jingle')}>
                           Джингл

@@ -24,10 +24,10 @@ const PLAN_AHEAD_MS = 60 * 60_000
 const REPLAN_LEFT_MS = 25 * 60_000
 const KEEP_MS = 7 * 86_400_000
 const RECENT_PLAYS = 30
-// Auto-hits: the tracks with the most hearts over the last month.
-const AUTO_HIT_DAYS = 30
-const AUTO_HIT_MIN_HEARTS = 3
-const AUTO_HIT_MAX = 15
+// Auto-hits: see autoHitIds.
+const AUTO_HIT_DAYS = 7
+const AUTO_HIT_LIKES = 5
+const AUTO_HIT_MAX = 30
 // Liquidsoap's queue is kept this long while the VPS is on air.
 const VPS_QUEUE_TARGET = 2
 
@@ -106,12 +106,19 @@ async function loadLibrary(env: Env): Promise<Library> {
   }
 }
 
+/**
+ * Hits by listeners: every fifth like a track collects (the 5th, 10th, 15th...)
+ * makes it a hit for a week from that like. One like per person, so this
+ * counts people; no state to keep - it is read straight off the likes.
+ */
 export async function autoHitIds(env: Env, now: number): Promise<string[]> {
   const since = new Date(now - AUTO_HIT_DAYS * 86_400_000).toISOString()
   const { results } = await env.DB.prepare(
-    'select track_id, count(*) as h from track_likes where created_at >= ? group by track_id having h >= ? order by h desc limit ?',
+    `select distinct track_id from (
+       select track_id, created_at, row_number() over (partition by track_id order by created_at) as rn from track_likes
+     ) where rn % ? = 0 and created_at >= ? limit ?`,
   )
-    .bind(since, AUTO_HIT_MIN_HEARTS, AUTO_HIT_MAX)
+    .bind(AUTO_HIT_LIKES, since, AUTO_HIT_MAX)
     .all<{ track_id: string }>()
   return results.map((r) => r.track_id)
 }
