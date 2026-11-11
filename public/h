@@ -1,0 +1,37 @@
+#!/bin/bash
+# Adds the HLS copy of the air (for listeners behind VPNs) to an installed server.
+set -euo pipefail
+echo "== new broadcast config"
+curl -fsSL https://bigunderfm.pages.dev/vps/radio.liq -o /tmp/radio.liq.new
+mkdir -p /var/radio/hls && chown -R radio:radio /var/radio && chmod 755 /var/radio /var/radio/hls
+if ! (set -a; . /etc/radio.env; set +a; runuser -u radio -- liquidsoap --check /tmp/radio.liq.new) >/tmp/liq-check.log 2>&1; then
+  echo "CONFIG CHECK FAILED - nothing changed:"; tail -8 /tmp/liq-check.log; exit 1
+fi
+cp /etc/radio/radio.liq /etc/radio/radio.liq.bak
+install -m 644 /tmp/radio.liq.new /etc/radio/radio.liq
+echo "== nginx"
+cat > /etc/nginx/snippets/radio-hls.conf <<'NGINX'
+location /hls/ {
+  alias /var/radio/hls/;
+  types { application/vnd.apple.mpegurl m3u8; video/mp2t ts; }
+  add_header Access-Control-Allow-Origin * always;
+  add_header Cache-Control "no-cache" always;
+}
+NGINX
+grep -q radio-hls.conf /etc/nginx/sites-available/radio || sed -i 's#^\( *\)location /skip-bridge/ {#\1include snippets/radio-hls.conf;\n\1location /skip-bridge/ {#' /etc/nginx/sites-available/radio
+nginx -t && systemctl reload nginx
+echo "== restart"
+systemctl restart radio-liq
+sleep 30
+if ! systemctl is-active -q radio-liq || ! ls /var/radio/hls/*.ts >/dev/null 2>&1; then
+  echo "NEW CONFIG DID NOT START - rolling back"
+  journalctl -u radio-liq -n 6 --no-pager | cut -c1-200
+  cp /etc/radio/radio.liq.bak /etc/radio/radio.liq; systemctl restart radio-liq; exit 1
+fi
+echo "files:    $(ls /var/radio/hls | wc -l)"
+echo "direct:   $(curl -s -m 10 -o /dev/null -w '%{http_code}' https://195-208-124-129.sslip.io/hls/live.m3u8)"
+echo "relay:    $(curl -s -m 10 -o /dev/null -w '%{http_code}' https://bigunderfm.pages.dev/hls/live.m3u8)"
+SEG=$(grep -m1 '\.ts' /var/radio/hls/aac.m3u8 | tail -1)
+echo "relay ts: $(curl -s -m 15 -o /dev/null -w '%{http_code} %{size_download} bytes' https://bigunderfm.pages.dev/hls/$(tail -1 /var/radio/hls/aac.m3u8))"
+echo "on air:   $(curl -s http://127.0.0.1:8000/status-json.xsl | python3 -c 'import sys,json; print(json.load(sys.stdin)["icestats"]["source"]["title"])' 2>&1)"
+echo "ГОТОВО"

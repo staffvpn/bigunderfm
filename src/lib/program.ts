@@ -1,5 +1,4 @@
 import { api } from './api'
-import { setTunnelHost } from './radioServer'
 
 // The station's planned air (see worker/src/program.ts): the current and next
 // few tracks with their exact times, plus which part of the grid is on. While
@@ -42,7 +41,6 @@ export async function fetchProgram(): Promise<Program | null> {
     const sent = Date.now()
     const view = await api<ProgramView>('/api/program')
     if (!Array.isArray(view?.items)) return null
-    setTunnelHost(view.tunnel ?? null)
     const received = Date.now()
     return { ...view, clockOffsetMs: Date.parse(view.now) - (sent + received) / 2 }
   } catch {

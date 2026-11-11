@@ -39,3 +39,11 @@ output.icecast(
   host="127.0.0.1", port=8000, password=icecast_password, mount="/radio",
   name="BIGUNDER FM", genre="Hip-Hop", description="BIGUNDER FM",
   final)
+
+# The same air cut into short files (HLS). Cloudflare hands these out to listeners
+# whose network or VPN cannot open this server directly (functions/hls).
+output.file.hls(
+  playlist="live.m3u8", segment_duration=8., segments=5, segments_overhead=6,
+  "/var/radio/hls",
+  [("aac", %ffmpeg(format="mpegts", %audio(codec="aac", b="96k", ar=44100, channels=2)))],
+  final)

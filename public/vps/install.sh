@@ -25,7 +25,8 @@ fi
 
 echo "== 3/8 files"
 id radio >/dev/null 2>&1 || useradd --system --home /var/radio --shell /usr/sbin/nologin radio
-mkdir -p /var/radio /etc/radio
+mkdir -p /var/radio/hls /etc/radio
+chmod 755 /var/radio /var/radio/hls
 chown -R radio:radio /var/radio
 for f in radio.liq bridge.py sync-playlist.sh; do curl -fsSL "$BASE/$f" -o "/tmp/$f"; done
 install -m 644 /tmp/radio.liq /etc/radio/radio.liq
@@ -113,6 +114,12 @@ server {
     proxy_read_timeout 3600s;
     proxy_hide_header Access-Control-Allow-Origin;
     add_header Access-Control-Allow-Origin * always;
+  }
+  location /hls/ {
+    alias /var/radio/hls/;
+    types { application/vnd.apple.mpegurl m3u8; video/mp2t ts; }
+    add_header Access-Control-Allow-Origin * always;
+    add_header Cache-Control "no-cache" always;
   }
   location /skip-bridge/ {
     proxy_pass http://127.0.0.1:8001/;

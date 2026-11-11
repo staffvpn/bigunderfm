@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { statusUrl, streamUrl, decodeHtmlEntities, isStreamServerUp, mediaUrl } from '../lib/radioServer'
+import { RELAY_DELAY_MS, detachLive, isRelayRoute, playLive, statusUrl, decodeHtmlEntities, isStreamServerUp, mediaUrl } from '../lib/radioServer'
 import { computeCurrentPosition } from '../lib/radioClock'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
 import { fetchPlaylist, fetchUpNextFilePath, toPlaylistTracks, type PlaylistEntry } from '../lib/tracks'
@@ -46,6 +46,8 @@ const PROGRAM_POLL_MS = 30_000
 // "Новинка" badge on the stream, same two weeks the rotation uses.
 const NEW_FOR_MS = 14 * 86_400_000
 const STREAM_CONNECT_TIMEOUT_MS = 5000
+// The relay has to fetch a playlist and a first 8-second file before sound starts.
+const RELAY_CONNECT_TIMEOUT_MS = 12000
 
 // Remembers for a while that the VPS was down, so reopening the app goes
 // straight to the fallback instead of first trying the dead server again.
@@ -161,7 +163,7 @@ export function RadioScreen() {
         setIsPaused(true)
         setConnectError(true)
       }
-    }, STREAM_CONNECT_TIMEOUT_MS)
+    }, isRelayRoute() ? RELAY_CONNECT_TIMEOUT_MS : STREAM_CONNECT_TIMEOUT_MS)
   }
 
   function startFallbackAudio(track: { artist: string; title: string; filePath: string }, offsetSeconds: number): boolean {
@@ -171,6 +173,7 @@ export function RadioScreen() {
     pendingSeekRef.current = offsetSeconds > 2 ? offsetSeconds : null
     connectingRef.current = true
     setIsBuffering(true)
+    detachLive()
     audio.src = mediaUrl(track.filePath)
     audio.play().catch(() => {})
     return true
@@ -355,7 +358,12 @@ export function RadioScreen() {
         if (rawTitle) {
           const title = decodeHtmlEntities(rawTitle)
           const [artist, ...rest] = title.split(' - ')
-          setNowPlaying({ artist, title: rest.join(' - ') || title })
+          const show = () => {
+            if (!fallbackRef.current) setNowPlaying({ artist, title: rest.join(' - ') || title })
+          }
+          // The relayed air runs behind the server, so its title waits as long.
+          if (isRelayRoute() && !isPausedRef.current) setTimeout(show, RELAY_DELAY_MS)
+          else show()
         }
       } catch {
         // Stream metadata is best-effort — playback itself doesn't depend on it.
@@ -394,8 +402,7 @@ export function RadioScreen() {
       if (!audio) return
       connectingRef.current = true
       armStreamWatchdog()
-      audio.src = streamUrl()
-      audio.play().catch(() => {})
+      playLive(audio)
     }
 
     // Icecast connections do drop mid-listen sometimes (a flaky mobile
@@ -587,12 +594,7 @@ export function RadioScreen() {
     // in a real radio station. Reassigning `src` forces a fresh connection
     // rather than resuming a stale/stalled buffer from before a pause.
     armStreamWatchdog()
-    if (audio.src !== streamUrl()) {
-      audio.src = streamUrl()
-    } else {
-      audio.load()
-    }
-    audio.play().catch(() => {})
+    playLive(audio)
   }
 
   function handlePlayClick() {
