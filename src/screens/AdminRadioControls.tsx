@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
-import { fetchIcecastStatus, type IcecastStatus } from '../lib/radioServer'
+import { LIVE_SERVER, fetchIcecastStatus, type IcecastStatus } from '../lib/radioServer'
 import { fetchAdminStats, STORAGE_LIMIT_BYTES, type AdminStats } from '../lib/adminStats'
 import { formatDuration, formatElapsedSince, formatBytes } from '../lib/format'
 import { LiveBroadcast } from '../components/LiveBroadcast'
@@ -117,7 +117,7 @@ export function AdminRadioControls() {
     <div className="admin-radio-controls">
       <h2>УПРАВЛЕНИЕ</h2>
 
-      {serverDown && (
+      {LIVE_SERVER && serverDown && (
         <p className="admin-dashboard__warning">
           Сервер вещания не отвечает. Радио играет прямо из Cloudflare по той же авторотации: музыка идёт, треки
           переключаются, но выход ведущих в эфир с микрофоном сейчас не работает.
@@ -130,7 +130,7 @@ export function AdminRadioControls() {
         </p>
       )}
 
-      <LiveBroadcast />
+      {LIVE_SERVER && <LiveBroadcast />}
 
       <div className="admin-dashboard__storage">
         <div className="admin-dashboard__storage-row">
@@ -164,12 +164,14 @@ export function AdminRadioControls() {
           <span className="admin-dashboard__tile-value">{stats?.peaks.month ?? '—'}</span>
           <span className="admin-dashboard__tile-label">Пик за месяц</span>
         </div>
+        {LIVE_SERVER && (
         <div className="admin-dashboard__tile">
           <span className="admin-dashboard__tile-value">
             {status?.streamStartedAt ? formatElapsedSince(status.streamStartedAt) : '—'}
           </span>
           <span className="admin-dashboard__tile-label">Эфир идёт</span>
         </div>
+        )}
         <div className="admin-dashboard__tile">
           <span className="admin-dashboard__tile-value">{stats?.trackCount ?? '—'}</span>
           <span className="admin-dashboard__tile-label">Треков в ротации</span>
@@ -178,10 +180,12 @@ export function AdminRadioControls() {
           <span className="admin-dashboard__tile-value">{stats ? formatDuration(stats.rotationSeconds) : '—'}</span>
           <span className="admin-dashboard__tile-label">Длительность ротации</span>
         </div>
+        {LIVE_SERVER && (
         <div className="admin-dashboard__tile">
           <span className="admin-dashboard__tile-value">{status?.bitrateKbps ? `${status.bitrateKbps} kbps` : '—'}</span>
           <span className="admin-dashboard__tile-label">Битрейт</span>
         </div>
+        )}
       </div>
 
       <div className="admin-dashboard__show-name">

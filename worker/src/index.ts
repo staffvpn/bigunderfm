@@ -492,6 +492,7 @@ async function handleStats(env: Env): Promise<Response> {
 
 async function handleSkip(env: Env): Promise<Response> {
   try {
+    if (env.LIVE_SERVER === '0') throw new Error('no server')
     const res = await fetch(`${env.SKIP_BRIDGE_URL}/skip`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${env.SKIP_BRIDGE_SECRET}` },
@@ -651,6 +652,7 @@ async function handleProgram(env: Env, ctx: ExecutionContext): Promise<Response>
 // ---------- play-next queue + live music level (Liquidsoap, through skip-bridge) ----------
 
 async function bridge<T>(env: Env, path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  if (env.LIVE_SERVER === '0') throw new Error('сервер эфира отключён, радио играет из облака')
   const res = await fetch(`${env.SKIP_BRIDGE_URL}${path}`, {
     method: init.method ?? 'GET',
     headers: { Authorization: `Bearer ${env.SKIP_BRIDGE_SECRET}`, 'Content-Type': 'application/json' },
@@ -1071,6 +1073,7 @@ async function sampleListeners(env: Env): Promise<void> {
   let title: string
   let source: any = null
   try {
+    if (env.LIVE_SERVER === '0') throw new Error('no server')
     const res = await fetch(env.ICECAST_STATUS_URL, { signal: AbortSignal.timeout(8000) })
     source = ((await res.json()) as any)?.icestats?.source
   } catch {

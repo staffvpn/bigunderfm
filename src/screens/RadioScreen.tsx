@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { RELAY_DELAY_MS, detachLive, isRelayRoute, playLive, statusUrl, decodeHtmlEntities, isStreamServerUp, mediaUrl } from '../lib/radioServer'
+import { LIVE_SERVER, RELAY_DELAY_MS, detachLive, isRelayRoute, playLive, statusUrl, decodeHtmlEntities, isStreamServerUp, mediaUrl } from '../lib/radioServer'
 import { computeCurrentPosition } from '../lib/radioClock'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
 import { fetchPlaylist, fetchUpNextFilePath, toPlaylistTracks, type PlaylistEntry } from '../lib/tracks'
@@ -62,6 +62,7 @@ function rememberVpsDown(down: boolean) {
   }
 }
 function vpsRecentlyDown(): boolean {
+  if (!LIVE_SERVER) return true
   try {
     const at = Number(localStorage.getItem(VPS_DOWN_KEY))
     return Number.isFinite(at) && at > 0 && Date.now() - at < VPS_DOWN_TTL_MS

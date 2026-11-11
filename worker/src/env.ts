@@ -4,6 +4,7 @@ export interface Env {
   PRESENCE: DurableObjectNamespace
   LIVE_ROOM: DurableObjectNamespace
   R2_PUBLIC_BASE: string
+  LIVE_SERVER?: string
   ICECAST_STATUS_URL: string
   SKIP_BRIDGE_URL: string
   TELEGRAM_BOT_TOKEN: string

@@ -35,6 +35,8 @@ crons = ["* * * * *"]
 [vars]
 # Public r.dev URL of the bigunderfm-media bucket — the VPS and the app read tracks from here.
 R2_PUBLIC_BASE = "https://pub-4940e64168824086a7fd4cf46cf01d65.r2.dev"
+# "0": no broadcast server, the app plays the planned program from R2 for everyone.
+LIVE_SERVER = "0"
 ICECAST_STATUS_URL = "https://195-208-124-129.sslip.io/status-json.xsl"
 SKIP_BRIDGE_URL = "https://195-208-124-129.sslip.io/skip-bridge"
 # WebSocket entry for going live from the admin tab: nginx -> Liquidsoap input.harbor (127.0.0.1:8005).

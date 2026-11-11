@@ -2,6 +2,10 @@
 // endpoint — RadioScreen (playback) and the admin dashboard (live stats)
 // both need it; one definition avoids the two drifting if the server
 // ever moves to a real domain.
+// The station now airs from the cloud for everyone (one path, the same with or
+// without a VPN). Set to true to use a broadcast server again.
+export const LIVE_SERVER = false
+
 const DIRECT_HOST = 'https://195-208-124-129.sslip.io'
 // Cloudflare relay (functions/hls, functions/status-json.xsl.ts). Listeners whose
 // network or VPN cannot open the server itself get the same air from here as
@@ -148,6 +152,7 @@ export function mediaUrl(filePath: string): string {
  * radio used to go silent with it.
  */
 export async function isStreamServerUp(timeoutMs = 6000): Promise<boolean> {
+  if (!LIVE_SERVER) return false
   return (await pickRoute(timeoutMs)) !== null
 }
 
@@ -180,6 +185,7 @@ export interface IcecastStatus {
  * than throwing, since every caller treats this as best-effort.
  */
 export async function fetchIcecastStatus(): Promise<IcecastStatus | null> {
+  if (!LIVE_SERVER) return null
   try {
     const data = (await fetchStatusFrom(DIRECT_HOST, 6000)) ?? (await fetchStatusFrom(RELAY_HOST, 6000))
     const source = data?.icestats?.source
