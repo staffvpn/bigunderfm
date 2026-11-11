@@ -52,7 +52,8 @@ export interface RSlot {
   priority: number
 }
 
-export type PlayKind = 'track' | 'hit' | 'new' | 'jingle'
+/** 'queued' = put on air by an admin ("play next"), outside the rotation. */
+export type PlayKind = 'track' | 'hit' | 'new' | 'jingle' | 'queued'
 
 export interface RPlayed {
   trackId: string

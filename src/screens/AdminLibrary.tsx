@@ -469,7 +469,7 @@ export function AdminLibrary() {
       </ul>
 
       <div className="admin-library__queue">
-        <span className="admin-library__queue-title">ОЧЕРЕДЬ</span>
+        <span className="admin-library__queue-title">ИГРАЮТ СЛЕДУЮЩИМИ</span>
         {queue.length === 0 ? (
           <p className="admin-library__rotation-summary">Пусто</p>
         ) : (
@@ -477,8 +477,7 @@ export function AdminLibrary() {
             {queue.map((q, i) => (
               <li key={q.rid}>
                 <span className="admin-library__label">
-                  {i + 1}. {q.track.artist} — {q.track.title}{' '}
-                  <span className="admin-library__queue-pos">(№{q.position})</span>
+                  {i + 1}. {q.track.artist} — {q.track.title}
                 </span>
                 <button onClick={() => handleUnqueue(q.rid)} aria-label="Убрать из очереди">
                   ✕
@@ -513,7 +512,8 @@ export function AdminLibrary() {
           </div>
           <p className="admin-library__hint">
             Эфир собирается сам: утром, днём, вечером и ночью играет своя папка, шоу выходят из своих папок по
-            расписанию, хиты повторяются каждые несколько часов. Нажми на папку под треком, чтобы положить его туда
+            расписанию, хиты повторяются каждые несколько часов. Порядок внутри папки перемешивается сам и каждый
+            день другой, двигать треки не нужно: чтобы трек прозвучал сейчас, нажми «Играть следующим». Нажми на папку под треком, чтобы положить его туда
             или убрать. Трек без папки играет в любое время суток.
           </p>
         </>
@@ -560,19 +560,8 @@ export function AdminLibrary() {
             ) : (
               <>
                 <div className="admin-library__row">
-                  {!searching && (
-                    <span
-                      className="drag-handle"
-                      onPointerDown={(e) => handleHandlePointerDown(e, entry.track.id)}
-                      onPointerMove={handleHandlePointerMove}
-                      onPointerUp={handleHandlePointerUp}
-                      onPointerCancel={handleHandlePointerUp}
-                    >
-                      ≡
-                    </span>
-                  )}
                   <span className="admin-library__label">
-                    {entry.position}. {entry.track.artist} — {entry.track.title}
+                    {entry.track.artist} — {entry.track.title}
                   </span>
                 </div>
                 {rotation && (
@@ -613,7 +602,7 @@ export function AdminLibrary() {
                 )}
                 <div className="admin-library__actions">
                   <button onClick={() => handleQueue(entry.track.id)} disabled={queueingId === entry.track.id}>
-                    {queueingId === entry.track.id ? '...' : 'В очередь'}
+                    {queueingId === entry.track.id ? '...' : 'Играть следующим'}
                   </button>
                   <button onClick={() => startEdit(entry)}>Изменить</button>
                   <button onClick={() => handleToggle(entry.track.id, entry.track.isEnabled)}>

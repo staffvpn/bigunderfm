@@ -4,7 +4,20 @@ import { signJwt, verifyJwt, type Claims } from './jwt'
 import { verifyInitData } from './telegramAuth'
 import { CORS_HEADERS, audioContentType, buildMediaKey, buildTrackKey, imageContentType, json, nowIso, safeEqual, sleep } from './util'
 
-import { airTitle, autoHitIds, feedVpsQueue, planAhead, programNow, programView, replanFuture, skipCurrent } from './program'
+import {
+  airTitle,
+  autoHitIds,
+  feedVpsQueue,
+  isVpsUp,
+  listQueued,
+  planAhead,
+  programNow,
+  programView,
+  queueNext,
+  replanFuture,
+  skipCurrent,
+  unqueue,
+} from './program'
 
 export { Presence } from './presence'
 export { LiveRoom } from './liveRoom'
@@ -491,6 +504,7 @@ async function handleSkip(env: Env): Promise<Response> {
   // Without the VPS the app plays the planned timeline, so skipping means
   // ending the current entry now; listeners move on at their next check.
   await skipCurrent(env, Date.now())
+  await dropProgramCache()
   return json({ ok: true, mode: 'program' })
 }
 
@@ -591,7 +605,31 @@ function trackKeyFromUri(env: Env, uri: string): string | null {
   return i === -1 ? null : uri.slice(i + env.R2_PUBLIC_BASE.length + 1)
 }
 
+/** Listeners should see a changed timeline at their next check, not 5 s later. */
+async function dropProgramCache(): Promise<void> {
+  await caches.default.delete(new Request('https://cache.bigunderfm/program'))
+}
+
 async function handleListQueue(env: Env): Promise<Response> {
+  if (!(await isVpsUp(env))) {
+    // Without the VPS the queue lives on the planned timeline.
+    const queued = await listQueued(env, Date.now())
+    const ids = [...new Set(queued.map((q) => q.trackId))]
+    const rows = ids.length
+      ? (
+          await env.DB.prepare(`${TRACK_SELECT} where t.id in (${ids.map(() => '?').join(',')})`)
+            .bind(...ids)
+            .all<TrackRow>()
+        ).results
+      : []
+    const byId = new Map(rows.map((r) => [r.id, r]))
+    return json({
+      entries: queued.flatMap((q) => {
+        const row = byId.get(q.trackId)
+        return row ? [{ rid: q.id, ...toEntry(row) }] : []
+      }),
+    })
+  }
   const { items } = await bridge<{ items: { rid: number; uri: string }[] }>(env, '/queue')
   const keyed = items.map((it) => ({ rid: it.rid, key: trackKeyFromUri(env, it.uri) }))
   const keys = [...new Set(keyed.map((k) => k.key).filter((k): k is string => !!k))]
@@ -615,6 +653,11 @@ async function handleQueueTrack(req: Request, env: Env): Promise<Response> {
   if (!body?.trackId) return json({ error: 'trackId required' }, 400)
   const row = await env.DB.prepare(`${TRACK_SELECT} where t.id = ?`).bind(body.trackId).first<TrackRow>()
   if (!row) return json({ error: 'Трек не найден' }, 404)
+  if (!(await isVpsUp(env))) {
+    await queueNext(env, Date.now(), row.id)
+    await dropProgramCache()
+    return json({ ok: true, mode: 'program' })
+  }
   // Same annotate format as sync-playlist.sh, so the stream title looks the same.
   const esc = (s: string) => s.replace(/[\r\n]+/g, ' ').replace(/"/g, '\\"')
   const artist = row.artist === 'Unknown Artist' ? '' : row.artist
@@ -797,6 +840,11 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (m === 'POST' && path === '/api/admin/queue') return viaBridge(() => handleQueueTrack(req, env))
     const queued = path.match(/^\/api\/admin\/queue\/(\d+)$/)
     if (queued && m === 'DELETE') {
+      if (!(await isVpsUp(env))) {
+        await unqueue(env, Date.now(), Number(queued[1]))
+        await dropProgramCache()
+        return json({ ok: true, mode: 'program' })
+      }
       return viaBridge(async () => json(await bridge(env, '/queue/remove', { method: 'POST', body: { rid: Number(queued[1]) } })))
     }
     if (m === 'GET' && path === '/api/admin/music-volume') return viaBridge(async () => json(await bridge(env, '/music-volume')))

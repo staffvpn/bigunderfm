@@ -860,8 +860,7 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  /* Lines up under the label, past the drag handle's 32px + the row's 8px gap. */
-  padding-left: 40px;
+  padding-left: 0;
 }
 
 .admin-library__label {
@@ -905,7 +904,7 @@ button {
 }
 
 .admin-library__chips--track {
-  padding-left: 40px;
+  padding-left: 0;
   margin: 6px 0 8px;
 }
 

@@ -204,6 +204,51 @@ export async function skipCurrent(env: Env, now: number): Promise<void> {
   await planAhead(env, now, true)
 }
 
+// ---------- admin "play next" without the VPS ----------
+// Queued tracks sit on the timeline right after the current one, in the
+// order they were added; the rotation continues after the last of them.
+
+export interface QueuedItem {
+  id: number
+  trackId: string
+}
+
+export async function listQueued(env: Env, now: number): Promise<QueuedItem[]> {
+  const { results } = await env.DB.prepare("select id, track_id from program where kind = 'queued' and starts_at > ? order by starts_at")
+    .bind(new Date(now).toISOString())
+    .all<{ id: number; track_id: string }>()
+  return results.map((r) => ({ id: r.id, trackId: r.track_id }))
+}
+
+/** Rebuilds everything after the current track: the given queue first, then the rotation. */
+async function setQueued(env: Env, now: number, trackIds: string[]): Promise<void> {
+  const iso = new Date(now).toISOString()
+  const current = await env.DB.prepare('select ends_at from program where starts_at <= ? and ends_at > ? order by starts_at desc limit 1')
+    .bind(iso, iso)
+    .first<{ ends_at: string }>()
+  let cursor = current ? Date.parse(current.ends_at) : now
+  const rows: Planned[] = []
+  for (const id of trackIds) {
+    const t = await env.DB.prepare('select duration_seconds from tracks where id = ? and is_enabled = 1').bind(id).first<{ duration_seconds: number }>()
+    if (!t) continue
+    const endsAt = cursor + Math.max(1, t.duration_seconds) * 1000
+    rows.push({ trackId: id, startsAt: cursor, endsAt, kind: 'queued', slotTitle: '' })
+    cursor = endsAt
+  }
+  await env.DB.batch([env.DB.prepare('delete from program where starts_at > ?').bind(iso), ...insertPlanned(env, rows)])
+  await planAhead(env, now, true)
+}
+
+export async function queueNext(env: Env, now: number, trackId: string): Promise<void> {
+  const queued = await listQueued(env, now)
+  await setQueued(env, now, [...queued.map((q) => q.trackId), trackId])
+}
+
+export async function unqueue(env: Env, now: number, itemId: number): Promise<void> {
+  const queued = await listQueued(env, now)
+  await setQueued(env, now, queued.filter((q) => q.id !== itemId).map((q) => q.trackId))
+}
+
 /** Drops what was planned but has not started (the library or the grid changed). */
 export async function replanFuture(env: Env, now: number): Promise<void> {
   await env.DB.prepare('delete from program where starts_at > ?').bind(new Date(now).toISOString()).run()

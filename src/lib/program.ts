@@ -17,7 +17,7 @@ export interface ProgramItem {
   id: number
   startsAt: string
   endsAt: string
-  kind: 'track' | 'hit' | 'new' | 'jingle'
+  kind: 'track' | 'hit' | 'new' | 'jingle' | 'queued'
   isNew: boolean
   track: ProgramTrack
 }
