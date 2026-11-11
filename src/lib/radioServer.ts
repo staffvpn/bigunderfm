@@ -2,7 +2,7 @@
 // endpoint — RadioScreen (playback) and the admin dashboard (live stats)
 // both need it; one definition avoids the two drifting if the server
 // ever moves to a real domain.
-export const STREAM_HOST = 'https://159-194-234-135.sslip.io'
+export const STREAM_HOST = 'https://195-208-124-129.sslip.io'
 export const STREAM_URL = `${STREAM_HOST}/radio`
 
 // Public R2 bucket the library lives in (same base the Worker hands the VPS).
