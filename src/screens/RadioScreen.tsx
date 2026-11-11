@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { STREAM_HOST, STREAM_URL, decodeHtmlEntities, isStreamServerUp, mediaUrl } from '../lib/radioServer'
+import { statusUrl, streamUrl, decodeHtmlEntities, isStreamServerUp, mediaUrl } from '../lib/radioServer'
 import { computeCurrentPosition } from '../lib/radioClock'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
 import { fetchPlaylist, fetchUpNextFilePath, toPlaylistTracks, type PlaylistEntry } from '../lib/tracks'
@@ -349,7 +349,7 @@ export function RadioScreen() {
     async function pollNowPlaying() {
       if (fallbackRef.current) return
       try {
-        const resp = await fetch(`${STREAM_HOST}/status-json.xsl`)
+        const resp = await fetch(statusUrl())
         const data = await resp.json()
         const rawTitle: string | undefined = data?.icestats?.source?.title
         if (rawTitle) {
@@ -394,7 +394,7 @@ export function RadioScreen() {
       if (!audio) return
       connectingRef.current = true
       armStreamWatchdog()
-      audio.src = STREAM_URL
+      audio.src = streamUrl()
       audio.play().catch(() => {})
     }
 
@@ -587,8 +587,8 @@ export function RadioScreen() {
     // in a real radio station. Reassigning `src` forces a fresh connection
     // rather than resuming a stale/stalled buffer from before a pause.
     armStreamWatchdog()
-    if (audio.src !== STREAM_URL) {
-      audio.src = STREAM_URL
+    if (audio.src !== streamUrl()) {
+      audio.src = streamUrl()
     } else {
       audio.load()
     }

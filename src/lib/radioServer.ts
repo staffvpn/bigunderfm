@@ -2,8 +2,63 @@
 // endpoint — RadioScreen (playback) and the admin dashboard (live stats)
 // both need it; one definition avoids the two drifting if the server
 // ever moves to a real domain.
-export const STREAM_HOST = 'https://195-208-124-129.sslip.io'
-export const STREAM_URL = `${STREAM_HOST}/radio`
+const DIRECT_HOST = 'https://195-208-124-129.sslip.io'
+// The same stream and status relayed by Cloudflare (functions/radio.ts,
+// functions/status-json.xsl.ts): reachable for listeners whose network (or
+// VPN exit) cannot open the server's own address.
+const PROXY_HOST = 'https://bigunderfm.pages.dev'
+
+const ROUTE_KEY = 'bfm_stream_via_proxy'
+const ROUTE_TTL_MS = 30 * 60 * 1000
+function rememberedProxy(): boolean {
+  try {
+    return Date.now() - Number(localStorage.getItem(ROUTE_KEY)) < ROUTE_TTL_MS
+  } catch {
+    return false
+  }
+}
+let streamHost = rememberedProxy() ? PROXY_HOST : DIRECT_HOST
+
+function useHost(host: string) {
+  streamHost = host
+  try {
+    if (host === PROXY_HOST) localStorage.setItem(ROUTE_KEY, String(Date.now()))
+    else localStorage.removeItem(ROUTE_KEY)
+  } catch {
+    // storage unavailable - not important
+  }
+}
+
+export const streamUrl = () => `${streamHost}/radio`
+export const statusUrl = () => `${streamHost}/status-json.xsl`
+
+/** Status JSON from the current route, or from the other one if that fails; switches to whichever answers. */
+async function fetchStatusJson(timeoutMs: number): Promise<any | null> {
+  const hosts = streamHost === PROXY_HOST ? [PROXY_HOST, DIRECT_HOST] : [DIRECT_HOST, PROXY_HOST]
+  const attempts = hosts.map(async (host) => {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+    try {
+      const resp = await fetch(`${host}/status-json.xsl`, { signal: ctrl.signal, cache: 'no-store' })
+      if (!resp.ok) return null
+      const data = await resp.json()
+      return data?.icestats?.source ? data : null
+    } catch {
+      return null
+    } finally {
+      clearTimeout(timer)
+    }
+  })
+  // Both are asked at once; the preferred route wins when it answers.
+  for (let i = 0; i < hosts.length; i++) {
+    const data = await attempts[i]
+    if (data) {
+      if (hosts[i] !== streamHost) useHost(hosts[i])
+      return data
+    }
+  }
+  return null
+}
 
 // Public R2 bucket the library lives in (same base the Worker hands the VPS).
 // Used directly by the fallback player when the VPS is unreachable.
@@ -24,18 +79,7 @@ export function mediaUrl(filePath: string): string {
  * radio used to go silent with it.
  */
 export async function isStreamServerUp(timeoutMs = 6000): Promise<boolean> {
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  try {
-    const resp = await fetch(`${STREAM_HOST}/status-json.xsl`, { signal: ctrl.signal, cache: 'no-store' })
-    if (!resp.ok) return false
-    const data = await resp.json()
-    return Boolean(data?.icestats?.source)
-  } catch {
-    return false
-  } finally {
-    clearTimeout(timer)
-  }
+  return (await fetchStatusJson(timeoutMs)) !== null
 }
 
 // Icecast's status-json.xsl escapes non-ASCII in text fields as numeric
@@ -68,9 +112,7 @@ export interface IcecastStatus {
  */
 export async function fetchIcecastStatus(): Promise<IcecastStatus | null> {
   try {
-    const resp = await fetch(`${STREAM_HOST}/status-json.xsl`)
-    if (!resp.ok) return null
-    const data = await resp.json()
+    const data = await fetchStatusJson(6000)
     const source = data?.icestats?.source
     if (!source) return null
 
