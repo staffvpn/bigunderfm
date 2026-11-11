@@ -27,6 +27,18 @@ async function fetchStatusFrom(host: string, timeoutMs: number): Promise<any | n
   }
 }
 
+// Public R2 bucket the library lives in (same base the Worker hands the VPS).
+// Used directly by the fallback player when the VPS is unreachable.
+export const MEDIA_BASE = 'https://pub-4940e64168824086a7fd4cf46cf01d65.r2.dev'
+
+// Served through a Pages Function on the app's own domain (functions/media),
+// because r2.dev itself isn't reliably reachable from Russia.
+const MEDIA_PROXY_BASE = 'https://bigunderfm.pages.dev/media'
+
+export function mediaUrl(filePath: string): string {
+  return `${MEDIA_PROXY_BASE}/${filePath.split('/').map(encodeURIComponent).join('/')}`
+}
+
 /**
  * True if the VPS answers its status page within `timeoutMs`. Used to decide
  * between the live Icecast stream and the R2 fallback player — the VPS sits
