@@ -3,73 +3,28 @@
 // both need it; one definition avoids the two drifting if the server
 // ever moves to a real domain.
 const DIRECT_HOST = 'https://195-208-124-129.sslip.io'
-// The same stream and status relayed by Cloudflare (functions/radio.ts,
-// functions/status-json.xsl.ts): reachable for listeners whose network (or
-// VPN exit) cannot open the server's own address.
+// Cloudflare relay of the status page only (functions/status-json.xsl.ts), so the
+// admin numbers still show for someone whose network or VPN cannot open the
+// server itself. The audio is not relayed: Cloudflare cannot carry a live stream
+// at full speed.
 const PROXY_HOST = 'https://bigunderfm.pages.dev'
 
-const ROUTE_KEY = 'bfm_stream_via_proxy'
-const ROUTE_TTL_MS = 30 * 60 * 1000
-function rememberedProxy(): boolean {
+export const streamUrl = () => `${DIRECT_HOST}/radio`
+export const statusUrl = () => `${DIRECT_HOST}/status-json.xsl`
+
+async function fetchStatusFrom(host: string, timeoutMs: number): Promise<any | null> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
-    return Date.now() - Number(localStorage.getItem(ROUTE_KEY)) < ROUTE_TTL_MS
+    const resp = await fetch(`${host}/status-json.xsl`, { signal: ctrl.signal, cache: 'no-store' })
+    if (!resp.ok) return null
+    const data = await resp.json()
+    return data?.icestats?.source ? data : null
   } catch {
-    return false
+    return null
+  } finally {
+    clearTimeout(timer)
   }
-}
-let streamHost = rememberedProxy() ? PROXY_HOST : DIRECT_HOST
-
-function useHost(host: string) {
-  streamHost = host
-  try {
-    if (host === PROXY_HOST) localStorage.setItem(ROUTE_KEY, String(Date.now()))
-    else localStorage.removeItem(ROUTE_KEY)
-  } catch {
-    // storage unavailable - not important
-  }
-}
-
-export const streamUrl = () => `${streamHost}/radio`
-export const statusUrl = () => `${streamHost}/status-json.xsl`
-
-/** Status JSON from the current route, or from the other one if that fails; switches to whichever answers. */
-async function fetchStatusJson(timeoutMs: number): Promise<any | null> {
-  const hosts = streamHost === PROXY_HOST ? [PROXY_HOST, DIRECT_HOST] : [DIRECT_HOST, PROXY_HOST]
-  const attempts = hosts.map(async (host) => {
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-    try {
-      const resp = await fetch(`${host}/status-json.xsl`, { signal: ctrl.signal, cache: 'no-store' })
-      if (!resp.ok) return null
-      const data = await resp.json()
-      return data?.icestats?.source ? data : null
-    } catch {
-      return null
-    } finally {
-      clearTimeout(timer)
-    }
-  })
-  // Both are asked at once; the preferred route wins when it answers.
-  for (let i = 0; i < hosts.length; i++) {
-    const data = await attempts[i]
-    if (data) {
-      if (hosts[i] !== streamHost) useHost(hosts[i])
-      return data
-    }
-  }
-  return null
-}
-
-// Public R2 bucket the library lives in (same base the Worker hands the VPS).
-// Used directly by the fallback player when the VPS is unreachable.
-export const MEDIA_BASE = 'https://pub-4940e64168824086a7fd4cf46cf01d65.r2.dev'
-
-// Served through a Pages Function on the app's own domain (functions/media),
-// because r2.dev itself isn't reliably reachable from Russia.
-const MEDIA_PROXY_BASE = 'https://bigunderfm.pages.dev/media'
-
-export function mediaUrl(filePath: string): string {
-  return `${MEDIA_PROXY_BASE}/${filePath.split('/').map(encodeURIComponent).join('/')}`
 }
 
 /**
@@ -79,7 +34,7 @@ export function mediaUrl(filePath: string): string {
  * radio used to go silent with it.
  */
 export async function isStreamServerUp(timeoutMs = 6000): Promise<boolean> {
-  return (await fetchStatusJson(timeoutMs)) !== null
+  return (await fetchStatusFrom(DIRECT_HOST, timeoutMs)) !== null
 }
 
 // Icecast's status-json.xsl escapes non-ASCII in text fields as numeric
@@ -112,7 +67,7 @@ export interface IcecastStatus {
  */
 export async function fetchIcecastStatus(): Promise<IcecastStatus | null> {
   try {
-    const data = await fetchStatusJson(6000)
+    const data = (await fetchStatusFrom(DIRECT_HOST, 6000)) ?? (await fetchStatusFrom(PROXY_HOST, 6000))
     const source = data?.icestats?.source
     if (!source) return null
 
