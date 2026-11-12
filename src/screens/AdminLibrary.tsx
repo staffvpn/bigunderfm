@@ -598,7 +598,7 @@ export function AdminLibrary() {
       )}
 
       <ul className="admin-library__list" ref={listRef}>
-        {visibleEntries.map((entry) => (
+        {visibleEntries.map((entry, index) => (
           <li
             key={entry.track.id}
             data-track-id={entry.track.id}
@@ -634,7 +634,7 @@ export function AdminLibrary() {
               <>
                 <div className="admin-library__row">
                   <span className="admin-library__label">
-                    {entry.track.artist} — {entry.track.title}
+                    <span className="admin-library__num">{index + 1}.</span> {entry.track.artist} — {entry.track.title}
                     {(rotation?.likes[entry.track.id] ?? 0) > 0 && (
                       <span className="admin-library__likes"> лайки: {rotation?.likes[entry.track.id]}</span>
                     )}

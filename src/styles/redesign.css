@@ -633,3 +633,10 @@
   color: #ffffff;
   border-bottom-color: #1f2bff;
 }
+
+.admin-library__num {
+  display: inline-block;
+  min-width: 2.2em;
+  font-weight: 700;
+  color: #0a0a0a;
+}
