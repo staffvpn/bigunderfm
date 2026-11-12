@@ -640,3 +640,25 @@
   font-weight: 700;
   color: #0a0a0a;
 }
+
+.admin-library__sortbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 8px 0;
+  font-size: 11px;
+  color: #5a5a5a;
+}
+.bfm-admin .admin-library button.admin-library__sort {
+  height: 30px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: #0a0a0a;
+  border: 1px solid #0a0a0a;
+  font-size: 11px;
+  font-weight: 500;
+}
+.bfm-admin .admin-library button.admin-library__sort.is-on {
+  background: #0a0a0a;
+  color: #ffffff;
+}

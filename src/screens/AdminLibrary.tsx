@@ -65,6 +65,7 @@ const QUEUE_POLL_MS = 60_000
 
 export function AdminLibrary() {
   const [entries, setEntries] = useState<PlaylistEntry[]>([])
+  const [byLikes, setByLikes] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [shuffling, setShuffling] = useState(false)
   const [results, setResults] = useState<string[]>([])
@@ -471,9 +472,11 @@ export function AdminLibrary() {
     : dragOrderIds
       ? dragOrderIds.map((id) => entries.find((e) => e.track.id === id)).filter((e): e is PlaylistEntry => !!e)
       : entries
-  // Most liked first; tracks with the same number of likes keep their order.
+  // Library order by default; the small "by likes" switch puts the most liked first.
+  // A track's number is its place in the whole library, so it never changes with a sort or filter.
   const likesOf = (e: PlaylistEntry) => rotation?.likes[e.track.id] ?? 0
-  const visibleEntries = [...filteredEntries].sort((a, b) => likesOf(b) - likesOf(a))
+  const visibleEntries = byLikes ? [...filteredEntries].sort((a, b) => likesOf(b) - likesOf(a)) : filteredEntries
+  const numberOf = new Map(entries.map((e, i) => [e.track.id, i + 1]))
 
   // "В ротации" reflects what's actually broadcasting right now (enabled
   // tracks only) — computed from data already on hand rather than a
@@ -584,21 +587,22 @@ export function AdminLibrary() {
           <p className="admin-library__hint">
             Эфир собирается сам: утром, днём, вечером и ночью играет своя папка, шоу выходят из своих папок по
             расписанию, хиты повторяются каждые несколько часов. Новый трек две недели лежит в «Новинках» и звучит чаще, потом
-            переходит в «Без папки». Каждые 5 лайков делают трек хитом на неделю. Список отсортирован по лайкам. Порядок внутри папки перемешивается сам и каждый
+            переходит в «Без папки». Каждые 5 лайков делают трек хитом на неделю. Кнопка «По лайкам» показывает самые любимые треки сверху. Порядок внутри папки перемешивается сам и каждый
             день другой. «Номер в эфире» ставит трек на нужное место в списке «Дальше в эфире», «Таймер» включает его
             ровно в заданное время. Анонс звучит только по таймеру. Нажми на папку под треком, чтобы положить его туда
             или убрать. Трек без папки играет в любое время суток.
           </p>
         </>
       )}
-      {searching && (
-        <p className="admin-library__rotation-summary">
-          Найдено: {visibleEntries.length}
-        </p>
-      )}
+      <div className="admin-library__sortbar">
+        <span>{searching ? `Найдено: ${visibleEntries.length}` : `Треков: ${entries.length}`}</span>
+        <button type="button" className={`admin-library__sort${byLikes ? ' is-on' : ''}`} onClick={() => setByLikes((v) => !v)}>
+          По лайкам
+        </button>
+      </div>
 
       <ul className="admin-library__list" ref={listRef}>
-        {visibleEntries.map((entry, index) => (
+        {visibleEntries.map((entry) => (
           <li
             key={entry.track.id}
             data-track-id={entry.track.id}
@@ -634,7 +638,7 @@ export function AdminLibrary() {
               <>
                 <div className="admin-library__row">
                   <span className="admin-library__label">
-                    <span className="admin-library__num">{index + 1}.</span> {entry.track.artist} — {entry.track.title}
+                    <span className="admin-library__num">{numberOf.get(entry.track.id)}.</span> {entry.track.artist} — {entry.track.title}
                     {(rotation?.likes[entry.track.id] ?? 0) > 0 && (
                       <span className="admin-library__likes"> лайки: {rotation?.likes[entry.track.id]}</span>
                     )}
