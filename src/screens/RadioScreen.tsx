@@ -3,14 +3,11 @@ import { subscribeProgramChanged } from '../lib/presence'
 import { LIVE_SERVER, RELAY_DELAY_MS, detachLive, isRelayRoute, playLive, statusUrl, decodeHtmlEntities, isStreamServerUp, mediaUrl } from '../lib/radioServer'
 import { computeCurrentPosition } from '../lib/radioClock'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
+import { LikeButton } from '../components/LikeButton'
+import { PauseIcon, PlayIcon } from '../components/Icons'
+import { Socials } from '../components/Socials'
 import { fetchPlaylist, fetchUpNextFilePath, toPlaylistTracks, type PlaylistEntry } from '../lib/tracks'
 import { afterItem, fetchProgram, gridLine, isLeftBehind, stationNow, tuneIn, type Program, type ProgramItem, type TuneIn } from '../lib/program'
-import { OnAirBadge } from '../components/OnAirBadge'
-import { EventTicker } from '../components/EventTicker'
-import { NextShowCard } from '../components/NextShowCard'
-import { ChromePendant } from '../components/ChromePendant'
-import { HeartReactions } from '../components/HeartReactions'
-import { PlayedHistory } from '../components/PlayedHistory'
 
 // Real, always-on broadcast — Icecast (distribution) + Liquidsoap
 // (scheduling/encoding) running on a dedicated VPS, streaming the shared
@@ -78,7 +75,7 @@ function normalize(s: string): string {
   return s.trim().toLowerCase()
 }
 
-export function RadioScreen() {
+export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
   const [userStarted, setUserStarted] = useState(false)
   const [isPaused, setIsPaused] = useState(true)
   // Connecting to a live stream isn't instant (DNS + TLS + TCP + enough
@@ -725,108 +722,44 @@ export function RadioScreen() {
   const showConnecting = userStarted && !isPaused && isBuffering
 
   return (
-    <div className="radio-screen">
-      <div className="radio-screen__content">
-        <EventTicker />
-        <div className="radio-screen__header">
-          <span className="radio-screen__station">BIGUNDER FM</span>
-          <OnAirBadge isPlaying={userStarted && !isPaused && !isBuffering} />
-        </div>
-        {grid && (
-          <div className="radio-screen__grid">
-            <span className="radio-screen__grid-now">{grid.now}</span>
-            {grid.next && <span className="radio-screen__grid-next">{grid.next}</span>}
-          </div>
+    <div className="bfm bfm-main">
+      <header className="bfm__head">
+        BIGUNDER FM
+        <br />
+        Independent Hip-Hop Radio
+      </header>
+      <div className="bfm__photo" style={background?.type === 'image' ? { backgroundImage: `url(${background.src})` } : undefined}>
+        {background?.type === 'video' && (
+          // Muted + playsInline + autoPlay is what lets mobile WebViews
+          // (Telegram's included) autoplay a video at all.
+          <video key={background.src} src={background.src} autoPlay loop muted playsInline aria-hidden="true" />
         )}
-
-        <div
-          className="radio-screen__cover"
-          style={background?.type === 'image' ? { backgroundImage: `url(${background.src})` } : undefined}
-        >
-          {background?.type === 'video' && (
-            // Muted + playsInline + autoPlay is what actually lets mobile
-            // WebViews (Telegram's included) autoplay a video at all —
-            // any sound would get it blocked outright, and without
-            // playsInline iOS forces it fullscreen instead of inline here.
-            // key=src forces a fresh <video> per pick so a shuffle back to
-            // the same clip restarts it from the top rather than reusing
-            // whatever position the old element was left at.
-            <video
-              key={background.src}
-              className="radio-screen__cover-video"
-              src={background.src}
-              autoPlay
-              loop
-              muted
-              playsInline
-              aria-hidden="true"
-            />
-          )}
-          <div className="radio-screen__cover-scrim" aria-hidden="true" />
-          <div className="radio-screen__cover-text">
-            <div className="radio-screen__now-label">
-              Сейчас играет
-              {isNewTrack && <span className="radio-screen__new-badge">Новинка</span>}
-            </div>
-            <div className="radio-screen__artist">{nowPlaying?.artist ?? '—'}</div>
-            <div
-              className={`radio-screen__cover-title${showConnecting ? ' radio-screen__cover-title--status' : ''}`}
-            >
-              {showConnecting ? 'Подключение...' : (nowPlaying?.title ?? 'Загрузка...')}
-            </div>
-          </div>
-        </div>
-
-        <NextShowCard />
-
-        <div className="radio-screen__meta-row">
-          <div className="radio-screen__next-label">
-            <span className="radio-screen__next-label-tag">Следующий трек:</span>
-            {nextTrack && (
-              <span className="radio-screen__next-label-name">
-                {nextTrack.artist} — {nextTrack.title}
-              </span>
-            )}
-            <PlayedHistory />
-          </div>
-          {/* The chrome plate from bigunder.ru, in place of the old looping
-              graffiti clip. */}
-          <ChromePendant playing={userStarted && !isPaused && !isBuffering} />
-        </div>
-
-        <div className="radio-screen__controls">
-          <button
-            className={`radio-screen__play${isBuffering ? ' radio-screen__play--buffering' : ''}`}
-            onClick={handlePlayClick}
-            disabled={userStarted && !isPaused && isBuffering}
-          >
-            {/* CSS-drawn shapes, not Unicode glyphs (▶ renders as a colored
-                emoji glyph on iOS instead of a plain triangle) — this way play
-                and pause are guaranteed the same visual style everywhere. */}
-            {userStarted && !isPaused ? <span className="icon-pause" /> : <span className="icon-play" />}
-          </button>
-          <HeartReactions trackId={likeTrackId} />
-        </div>
-
-        {connectError && (
-          <div className="radio-screen__error">Не удалось подключиться. Нажмите play, чтобы попробовать снова.</div>
-        )}
-
-        {/* No crossOrigin here. It was only ever needed for a Web Audio
-            equalizer tap (useAudioAnalyser.ts) that isn't used by this
-            screen any more (the poster-style redesign replaced the canvas
-            visualizer with the background image/video) — but the attribute
-            itself stayed, reintroduced by an old blanket revert commit
-            (e62e83d) without anyone re-deciding it was still needed. This
-            codebase already has a confirmed, repeated finding for the
-            EXACT same element: crossOrigin has broken this Icecast stream
-            specifically on iOS/iPadOS WebKit before (originally surfaced as
-            seeking always landing back at 0:00, see fa385d0 — that symptom
-            went away only because the later switch to a live stream removed
-            seeking entirely, not because the underlying WebKit issue with
-            crossOrigin on this stream was ever fixed). The server already
-            sends a correct `Access-Control-Allow-Origin: *`, so this was
-            never required for playback itself either way. */}
+      </div>
+      <div className="bfm__now">
+        <span className="bfm__label">
+          Сейчас в эфире{grid ? ` · ${grid.now}` : ''}
+          {isNewTrack ? ' · Новинка' : ''}
+        </span>
+        <span className="bfm__artist">{nowPlaying?.artist || '—'}</span>
+        <span className="bfm__title">{showConnecting ? 'Подключение...' : (nowPlaying?.title ?? 'Загрузка...')}</span>
+      </div>
+      <button type="button" className="bfm__play" onClick={handlePlayClick} disabled={userStarted && !isPaused && isBuffering}>
+        <span>{userStarted && !isPaused ? 'Пауза' : 'Слушать'}</span>
+        {userStarted && !isPaused ? <PauseIcon /> : <PlayIcon />}
+      </button>
+      <div className="bfm__actions">
+        <LikeButton trackId={likeTrackId} />
+        <button type="button" className="bfm__to-grid" onClick={onOpenGrid}>
+          Сетка →
+        </button>
+      </div>
+      <div className="bfm__next">
+        <span className="bfm__next-tag">Дальше</span>
+        <span className="bfm__next-name">{nextTrack ? `${nextTrack.artist} · ${nextTrack.title}` : ''}</span>
+      </div>
+      {connectError && <div className="bfm__error">Не удалось подключиться. Нажмите «Слушать» ещё раз.</div>}
+      <Socials />
+      <div hidden>
         <audio ref={audioRef} preload="none" />
       </div>
     </div>

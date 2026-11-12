@@ -6,12 +6,11 @@ import { RadioScreen } from './screens/RadioScreen'
 import { AdminLibrary } from './screens/AdminLibrary'
 import { AdminRadioControls } from './screens/AdminRadioControls'
 import { AdminSchedule } from './screens/AdminSchedule'
-import { InfoScreen } from './screens/InfoScreen'
-import { ScheduleScreen } from './screens/ScheduleScreen'
+import { GridScreen } from './screens/GridScreen'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import pendant from './assets/pendant/pendant-front.webp'
 
-type Tab = 'radio' | 'library' | 'controls' | 'info' | 'schedule'
+type Tab = 'radio' | 'grid' | 'library' | 'controls' | 'schedule'
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false)
@@ -37,7 +36,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={isAdmin ? 'app app--admin' : 'app'}>
       {/* Always mounted, hidden via CSS rather than conditionally rendered
           like the other tabs — RadioScreen owns the live <audio> element and
           its connection state. An admin bouncing to Библиотека/Управление
@@ -48,7 +47,7 @@ export default function App() {
           the stream keep playing in the background across every tab. */}
       <div style={{ display: tab === 'radio' ? 'contents' : 'none' }}>
         <ErrorBoundary label="Эфир">
-          <RadioScreen />
+          <RadioScreen onOpenGrid={() => setTab('grid')} />
         </ErrorBoundary>
       </div>
       {tab === 'library' && isAdmin && (
@@ -66,21 +65,16 @@ export default function App() {
           <AdminRadioControls />
         </ErrorBoundary>
       )}
-      {tab === 'schedule' && !isAdmin && (
-        <ErrorBoundary label="Schedule">
-          <ScheduleScreen />
-        </ErrorBoundary>
-      )}
-      {tab === 'info' && !isAdmin && (
-        <ErrorBoundary label="Инфо">
-          <InfoScreen />
+      {tab === 'grid' && (
+        <ErrorBoundary label="Сетка">
+          <GridScreen onBack={() => setTab('radio')} />
         </ErrorBoundary>
       )}
 
       {isAdmin && (
         <nav className="app__admin-nav">
-          <button className={tab === 'radio' ? 'is-active' : ''} onClick={() => setTab('radio')}>
-            Live
+          <button className={tab === 'radio' || tab === 'grid' ? 'is-active' : ''} onClick={() => setTab('radio')}>
+            Эфир
           </button>
           <button className={tab === 'library' ? 'is-active' : ''} onClick={() => setTab('library')}>
             Library
@@ -90,22 +84,6 @@ export default function App() {
           </button>
           <button className={tab === 'controls' ? 'is-active' : ''} onClick={() => setTab('controls')}>
             Admin
-          </button>
-        </nav>
-      )}
-      {/* Regular listeners never had a bottom nav at all before — Info is
-          the first non-admin section, so this is new, not a variant of the
-          admin one above (which stays exactly as it was). */}
-      {!isAdmin && (
-        <nav className="app__admin-nav">
-          <button className={tab === 'radio' ? 'is-active' : ''} onClick={() => setTab('radio')}>
-            Live
-          </button>
-          <button className={tab === 'schedule' ? 'is-active' : ''} onClick={() => setTab('schedule')}>
-            Schedule
-          </button>
-          <button className={tab === 'info' ? 'is-active' : ''} onClick={() => setTab('info')}>
-            Info
           </button>
         </nav>
       )}

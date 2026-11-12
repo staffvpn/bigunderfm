@@ -28,8 +28,8 @@ export function initTelegramApp(): void {
   if (webApp) {
     webApp.ready()
     webApp.expand()
-    // The app is white like bigunder.ru, whatever theme Telegram itself is in.
-    webApp.setHeaderColor?.('#ffffff')
+    // Telegram's own bar continues the app's black header.
+    webApp.setHeaderColor?.('#0a0a0a')
     webApp.setBackgroundColor?.('#ffffff')
   }
 }

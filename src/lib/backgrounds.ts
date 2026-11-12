@@ -61,3 +61,9 @@ export function pickNextBackground(): BackgroundItem | undefined {
   lastPicked = picked?.src
   return picked
 }
+
+/** The still currently on the main screen (or any still, when a video is up), for other screens. */
+export function currentBackgroundImage(): string | undefined {
+  const images = BACKGROUND_ITEMS.filter((b) => b.type === 'image')
+  return images.find((b) => b.src === lastPicked)?.src ?? images[0]?.src
+}

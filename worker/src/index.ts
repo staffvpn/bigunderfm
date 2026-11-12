@@ -631,6 +631,62 @@ async function handleLike(req: Request, env: Env): Promise<Response> {
   return json(await likeState(env, body.trackId, user))
 }
 
+/** The grid screen in one request: what just played (with this person's likes),
+    what is on, what is next, and when the shows air. */
+async function handleGrid(req: Request, env: Env, url: URL): Promise<Response> {
+  const nowMs = Date.now()
+  const iso = new Date(nowMs).toISOString()
+  const [view, user, pastRes, showsRes] = await Promise.all([
+    programView(env, nowMs),
+    likeUser(req, env, url.searchParams.get('device')),
+    env.DB.prepare(
+      `select p.track_id, p.starts_at, t.title, t.artist from program p join tracks t on t.id = p.track_id
+       where p.ends_at <= ? and t.kind = 'track' order by p.starts_at desc limit 5`,
+    )
+      .bind(iso)
+      .all<{ track_id: string; starts_at: string; title: string; artist: string }>(),
+    env.DB.prepare(
+      "select s.title, s.days, s.start_minute from schedule_slots s join folders f on f.id = s.folder_id where f.kind = 'show' order by s.start_minute",
+    ).all<{ title: string; days: string; start_minute: number }>(),
+  ])
+  const idx = view.items.findIndex((it) => Date.parse(it.startsAt) <= nowMs && Date.parse(it.endsAt) > nowMs)
+  const current = idx >= 0 ? view.items[idx] : null
+  const next = view.items.slice(idx + 1).find((it) => it.kind !== 'jingle' && it.kind !== 'timer') ?? null
+  const likeable = !!current && current.kind !== 'jingle' && current.kind !== 'timer'
+  const ids = [...new Set([...pastRes.results.map((r) => r.track_id), ...(likeable ? [current!.track.id] : [])])]
+  const likes = new Map<string, { n: number; mine: number }>()
+  if (ids.length) {
+    const res = await env.DB.prepare(
+      `select track_id, count(*) as n, sum(case when user_key = ? then 1 else 0 end) as mine from track_likes
+       where track_id in (${ids.map(() => '?').join(',')}) group by track_id`,
+    )
+      .bind(user ?? '', ...ids)
+      .all<{ track_id: string; n: number; mine: number }>()
+    for (const r of res.results) likes.set(r.track_id, { n: Number(r.n), mine: Number(r.mine) })
+  }
+  const like = (id: string) => ({ likes: likes.get(id)?.n ?? 0, liked: (likes.get(id)?.mine ?? 0) > 0 })
+  return json({
+    now: iso,
+    slot: view.slot?.title ?? null,
+    current: current
+      ? {
+          trackId: likeable ? current.track.id : null,
+          startsAt: current.startsAt,
+          endsAt: current.endsAt,
+          artist: current.track.artist,
+          title: current.track.title,
+          isNew: current.isNew,
+          ...like(current.track.id),
+        }
+      : null,
+    next: next ? { startsAt: next.startsAt, artist: next.track.artist, title: next.track.title } : null,
+    past: pastRes.results
+      .reverse()
+      .map((r) => ({ trackId: r.track_id, startsAt: r.starts_at, artist: r.artist, title: r.title, ...like(r.track_id) })),
+    shows: showsRes.results.map((r) => ({ title: r.title, days: r.days, startMinute: r.start_minute })),
+  })
+}
+
 /** Now / next / grid for the app. Cached a few seconds (every open app polls
     it); the clock in the answer is always fresh, since the app sets its own
     clock offset by it. */
@@ -879,6 +935,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
   if (m === 'GET' && path === '/api/history') return handleHistory(env, ctx)
   if (m === 'GET' && path === '/api/program') return handleProgram(env, ctx)
   if (m === 'GET' && path === '/api/likes') return handleGetLike(req, env, url)
+  if (m === 'GET' && path === '/api/grid') return handleGrid(req, env, url)
   if (m === 'POST' && path === '/api/likes') return handleLike(req, env)
   const remind = path.match(/^\/api\/events\/([0-9a-f-]{36})\/remind$/)
   if (remind && m === 'POST') {
