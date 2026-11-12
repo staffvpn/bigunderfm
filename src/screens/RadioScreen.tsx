@@ -4,6 +4,7 @@ import { LIVE_SERVER, RELAY_DELAY_MS, detachLive, isRelayRoute, playLive, status
 import { computeCurrentPosition } from '../lib/radioClock'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
 import { LikeButton } from '../components/LikeButton'
+import { FitTitle } from '../components/FitTitle'
 import { PauseIcon, PlayIcon } from '../components/Icons'
 import { Socials } from '../components/Socials'
 import { fetchPlaylist, fetchUpNextFilePath, toPlaylistTracks, type PlaylistEntry } from '../lib/tracks'
@@ -741,8 +742,9 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
           В эфире{airName ? ` · ${airName}` : ''}
           {isNewTrack ? ' · Новинка' : ''}
         </span>
-        <span className="bfm__artist">{nowPlaying?.artist || '—'}</span>
-        <span className="bfm__title">{showConnecting ? 'Подключение...' : (nowPlaying?.title ?? 'Загрузка...')}</span>
+        {/* One line each, shrunk to fit: the photo keeps its height whatever the names. */}
+        <FitTitle className="bfm__artist" text={nowPlaying?.artist || '—'} min={18} />
+        <FitTitle className="bfm__title" text={showConnecting ? 'Подключение...' : (nowPlaying?.title ?? 'Загрузка...')} min={12} />
       </div>
       <button type="button" className="bfm__play" onClick={handlePlayClick} disabled={userStarted && !isPaused && isBuffering}>
         <span>{userStarted && !isPaused ? 'Пауза' : 'Слушать'}</span>

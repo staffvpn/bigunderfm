@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef } from 'react'
 // stylesheet gives it and steps down only as far as needed to fit the row.
 const MIN_PX = 14
 
-export function FitTitle({ text, className }: { text: string; className: string }) {
+export function FitTitle({ text, className, min = MIN_PX }: { text: string; className: string; min?: number }) {
   const ref = useRef<HTMLSpanElement>(null)
 
   useLayoutEffect(() => {
@@ -13,7 +13,7 @@ export function FitTitle({ text, className }: { text: string; className: string 
     const fit = () => {
       el.style.fontSize = ''
       let size = parseFloat(getComputedStyle(el).fontSize)
-      while (el.scrollWidth > el.clientWidth && size > MIN_PX) {
+      while (el.scrollWidth > el.clientWidth && size > min) {
         size -= 1
         el.style.fontSize = `${size}px`
       }
@@ -23,7 +23,7 @@ export function FitTitle({ text, className }: { text: string; className: string 
     document.fonts?.ready.then(fit)
     window.addEventListener('resize', fit)
     return () => window.removeEventListener('resize', fit)
-  }, [text])
+  }, [text, min])
 
   return (
     <span ref={ref} className={`${className} fit-title`}>
