@@ -75,7 +75,7 @@ function normalize(s: string): string {
   return s.trim().toLowerCase()
 }
 
-export function RadioScreen() {
+export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
   const [userStarted, setUserStarted] = useState(false)
   const [isPaused, setIsPaused] = useState(true)
   // Connecting to a live stream isn't instant (DNS + TLS + TCP + enough
@@ -750,6 +750,9 @@ export function RadioScreen() {
       </button>
       <div className="bfm__actions">
         <LikeButton trackId={likeTrackId} />
+        <button type="button" className="bfm__to-grid" onClick={onOpenGrid}>
+          Сетка →
+        </button>
       </div>
       <div className="bfm__next">
         <span className="bfm__next-tag">Дальше</span>

@@ -126,6 +126,9 @@
   font-size: 14px !important;
   font-weight: 600 !important;
 }
+.bfm__like {
+  border-right: 1px solid var(--ink) !important;
+}
 .bfm__like:active,
 .bfm__to-grid:active {
   background: var(--ink);

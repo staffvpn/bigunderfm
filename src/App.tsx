@@ -41,7 +41,7 @@ export default function App() {
           the stream keep playing in the background across every tab. */}
       <div style={{ display: tab === 'radio' ? 'contents' : 'none' }}>
         <ErrorBoundary label="Эфир">
-          <RadioScreen />
+          <RadioScreen onOpenGrid={() => setTab('grid')} />
         </ErrorBoundary>
       </div>
       {tab === 'library' && isAdmin && (
