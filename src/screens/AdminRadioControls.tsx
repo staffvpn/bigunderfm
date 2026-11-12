@@ -5,6 +5,7 @@ import { LIVE_SERVER, fetchIcecastStatus, type IcecastStatus } from '../lib/radi
 import { fetchAdminStats, STORAGE_LIMIT_BYTES, type AdminStats } from '../lib/adminStats'
 import { formatDuration, formatElapsedSince, formatBytes } from '../lib/format'
 import { LiveBroadcast } from '../components/LiveBroadcast'
+import { AdminAir } from './AdminAir'
 
 // Above this fraction of the free R2 allowance, flag it.
 const STORAGE_WARNING_THRESHOLD = 0.85
@@ -192,6 +193,8 @@ export function AdminRadioControls() {
         </div>
         )}
       </div>
+
+      <AdminAir />
 
       <div className="admin-dashboard__show-name">
         <label htmlFor="admin-notify-input" className="admin-dashboard__show-name-label">

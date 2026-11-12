@@ -26,7 +26,7 @@ export interface ProgramView {
   now: string
   vpsUp: boolean
   tunnel?: string | null
-  slot: { title: string; endsAt: string | null } | null
+  slot: { title: string; label?: string; endsAt: string | null } | null
   nextSlot: { title: string; startsAt: string } | null
   items: ProgramItem[]
 }

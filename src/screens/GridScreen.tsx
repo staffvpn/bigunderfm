@@ -33,7 +33,7 @@ const DAYS = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС']
 const showDays = (days: string) => (days.length >= 7 ? 'ЕЖЕДН.' : [...days].map((d) => DAYS[Number(d) - 1] ?? '').join(' '))
 const showTime = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`
 
-export function GridScreen({ onBack }: { onBack: () => void }) {
+export function GridScreen() {
   const [grid, setGrid] = useState<Grid | null>(null)
   const [failed, setFailed] = useState(false)
   const [nowLabel, setNowLabel] = useState('')
@@ -99,6 +99,13 @@ export function GridScreen({ onBack }: { onBack: () => void }) {
     )
 
   const current = grid?.current
+  // Rows slide up one line when the air moves on (not on the first load).
+  const seenRef = useRef<string | null>(null)
+  const currentKey = current?.startsAt ?? ''
+  const moved = seenRef.current !== null && seenRef.current !== currentKey
+  useEffect(() => {
+    if (currentKey) seenRef.current = currentKey
+  }, [currentKey])
 
   return (
     <div className="bfm bfm-grid">
@@ -108,11 +115,8 @@ export function GridScreen({ onBack }: { onBack: () => void }) {
         Independent Hip-Hop Radio
       </header>
       <div className="bfm-grid__bar">
-        <button type="button" className="bfm-grid__back" onClick={onBack}>
-          ← Эфир
-        </button>
-        <span>{nowLabel}</span>
         <span className="bfm-grid__tab">Сетка</span>
+        <span>{nowLabel}</span>
       </div>
       <div className="bfm-grid__cols">
         <span className="bfm-grid__time">Время</span>
@@ -121,6 +125,7 @@ export function GridScreen({ onBack }: { onBack: () => void }) {
         <span>{grid?.slot ?? ''}</span>
       </div>
       {!grid && <div className="bfm-grid__row">{failed ? 'Не удалось загрузить. Попробуйте позже.' : 'Загрузка...'}</div>}
+      <div className={`bfm-grid__list${moved ? ' is-moving' : ''}`} key={currentKey}>
       {grid?.past.map((t) => (
         <div className="bfm-grid__row" key={t.startsAt}>
           <span className="bfm-grid__time">{clock(t.startsAt)}</span>
@@ -140,7 +145,9 @@ export function GridScreen({ onBack }: { onBack: () => void }) {
           <div className="bfm-grid__now">
             <div className="bfm-grid__photo" style={photo ? { backgroundImage: `url(${photo})` } : undefined} />
             <div className="bfm-grid__card">
-              <span className="bfm__label">Сейчас в эфире</span>
+              <span className="bfm__label">
+                <span className="bfm__live" aria-hidden="true" />В эфире
+              </span>
               <span className="bfm-grid__card-artist">{current.artist}</span>
               <span className="bfm-grid__card-title">{current.title}</span>
               <span className="bfm-grid__card-meta">
@@ -158,6 +165,7 @@ export function GridScreen({ onBack }: { onBack: () => void }) {
           <span>Дальше</span>
         </div>
       )}
+      </div>
       {grid && grid.shows.length > 0 && (
         <>
           <div className="bfm-grid__cols">

@@ -13,6 +13,7 @@ import {
   planAhead,
   programNow,
   programView,
+  parseAirNames,
   queueAt,
   removeUpcoming,
   replanFuture,
@@ -511,6 +512,54 @@ async function handleSkip(env: Env): Promise<Response> {
 
 // ---------- rotation: folders, hits, grid (admin) ----------
 
+/** What the admin edits about the air: the listener-facing names of the day parts, and the shows. */
+async function handleAdminAir(env: Env): Promise<Response> {
+  const [names, shows] = await Promise.all([
+    env.DB.prepare("select value from settings where key = 'air_names'").first<{ value: string }>(),
+    env.DB.prepare(
+      "select s.id, s.title, s.days, s.start_minute, s.end_minute from schedule_slots s join folders f on f.id = s.folder_id where f.kind = 'show' order by s.start_minute",
+    ).all<{ id: string; title: string; days: string; start_minute: number; end_minute: number }>(),
+  ])
+  return json({
+    names: parseAirNames(names?.value),
+    shows: shows.results.map((r) => ({ id: r.id, title: r.title, days: r.days, startMinute: r.start_minute, endMinute: r.end_minute })),
+  })
+}
+
+async function handleSetAirNames(req: Request, env: Env): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as Record<string, unknown> | null
+  if (!body) return json({ error: 'names required' }, 400)
+  const names = parseAirNames(JSON.stringify(body))
+  await env.DB.prepare("insert into settings (key, value) values ('air_names', ?) on conflict(key) do update set value = excluded.value")
+    .bind(JSON.stringify(names))
+    .run()
+  await dropProgramCache(env)
+  return json({ names })
+}
+
+async function handleSetShow(req: Request, env: Env, slotId: string): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as { title?: string; days?: string; startMinute?: number; endMinute?: number } | null
+  const title = String(body?.title ?? '').trim().slice(0, 60)
+  const days = [...new Set(String(body?.days ?? '').replace(/[^1-7]/g, ''))].sort().join('')
+  const start = Math.trunc(Number(body?.startMinute))
+  const end = Math.trunc(Number(body?.endMinute))
+  const minuteOk = (n: number) => Number.isFinite(n) && n >= 0 && n < 1440
+  if (!title || !days || !minuteOk(start) || !minuteOk(end) || start === end) return json({ error: 'Проверьте название, дни и время' }, 400)
+  const slot = await env.DB.prepare(
+    "select s.folder_id from schedule_slots s join folders f on f.id = s.folder_id where s.id = ? and f.kind = 'show'",
+  )
+    .bind(slotId)
+    .first<{ folder_id: string }>()
+  if (!slot) return json({ error: 'Шоу не найдено' }, 404)
+  await env.DB.batch([
+    env.DB.prepare('update schedule_slots set title = ?, days = ?, start_minute = ?, end_minute = ? where id = ?').bind(title, days, start, end, slotId),
+    env.DB.prepare('update folders set name = ? where id = ?').bind(title, slot.folder_id),
+  ])
+  await replanFuture(env, Date.now())
+  await dropProgramCache(env)
+  return json({ ok: true })
+}
+
 async function handleRotation(env: Env): Promise<Response> {
   const [folders, links, slots] = await env.DB.batch([
     env.DB.prepare('select id, name, kind from folders order by position'),
@@ -667,7 +716,7 @@ async function handleGrid(req: Request, env: Env, url: URL): Promise<Response> {
   const like = (id: string) => ({ likes: likes.get(id)?.n ?? 0, liked: (likes.get(id)?.mine ?? 0) > 0 })
   return json({
     now: iso,
-    slot: view.slot?.title ?? null,
+    slot: view.slot?.label ?? null,
     current: current
       ? {
           trackId: likeable ? current.track.id : null,
@@ -982,6 +1031,10 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (m === 'GET' && path === '/api/admin/stats') return handleStats(env)
     if (m === 'GET' && path === '/api/admin/fallback-status') return handleFallbackStatus(env)
     if (m === 'GET' && path === '/api/admin/rotation') return handleRotation(env)
+    if (m === 'GET' && path === '/api/admin/air') return handleAdminAir(env)
+    if (m === 'PUT' && path === '/api/admin/air-names') return handleSetAirNames(req, env)
+    const showSlot = path.match(/^\/api\/admin\/shows\/([a-z0-9-]{1,60})$/)
+    if (showSlot && m === 'PUT') return handleSetShow(req, env, showSlot[1])
     if (m === 'POST' && path === '/api/admin/timers') return handleAddTimer(req, env)
     const timerId = path.match(/^\/api\/admin\/timers\/(\d+)$/)
     if (timerId && m === 'DELETE') return handleDeleteTimer(env, Number(timerId[1]))

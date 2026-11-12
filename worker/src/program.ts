@@ -388,7 +388,7 @@ export interface ProgramView {
   vpsUp: boolean
   /** Cloudflare tunnel address of the broadcast server, for listeners who cannot reach it directly. */
   tunnel: string | null
-  slot: { title: string; endsAt: string | null } | null
+  slot: { title: string; label: string; endsAt: string | null } | null
   nextSlot: { title: string; startsAt: string } | null
   items: ProgramItem[]
 }
@@ -423,20 +423,50 @@ export async function isVpsUp(env: Env): Promise<boolean> {
 }
 
 /** What the app needs: the current and next few tracks with their times, and the grid. */
+/** What listeners see instead of the day parts' folder names. {DAY} is today's weekday in English (Moscow). */
+export const DEFAULT_AIR_NAMES: Record<string, string> = {
+  morning: 'GOOD MORNING',
+  day: '{DAY} SELECT',
+  evening: 'PRIME TIME',
+  night: 'NIGHT SHIFT',
+}
+const WEEKDAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+
+export function parseAirNames(raw: string | null | undefined): Record<string, string> {
+  try {
+    const saved = raw ? (JSON.parse(raw) as Record<string, unknown>) : {}
+    const names = { ...DEFAULT_AIR_NAMES }
+    for (const key of Object.keys(names)) {
+      const v = saved[key]
+      if (typeof v === 'string' && v.trim()) names[key] = v.trim().slice(0, 40)
+    }
+    return names
+  } catch {
+    return { ...DEFAULT_AIR_NAMES }
+  }
+}
+
+export function airLabel(slot: { folderId: string; title: string }, names: Record<string, string>, now: number): string {
+  const template = names[slot.folderId]
+  if (!template) return slot.title
+  const weekday = WEEKDAYS[new Date(now + 3 * 3600_000).getUTCDay()]
+  return template.replace(/\{DAY\}/gi, weekday)
+}
+
 export async function programView(env: Env, now: number): Promise<ProgramView> {
   let items = await loadItems(env, now)
   if (items.length === 0 || Date.parse(items[0].starts_at) > now + 5000) {
     await planAhead(env, now, items.length === 0)
     items = await loadItems(env, now)
   }
-  const [slotsRes, showsRes, vps, tunnelRow] = await Promise.all([
+  const [slotsRes, showsRes, vps, tunnelRow] = await Promise.all([ // tunnelRow: the air_names setting
     env.DB.prepare('select id, folder_id, title, days, start_minute, end_minute, priority from schedule_slots').all<SlotRow>(),
     // Which show folders have anything in them (an empty show doesn't air).
     env.DB.prepare(
       "select f.id from folders f where f.kind = 'show' and exists (select 1 from folder_tracks ft join tracks t on t.id = ft.track_id where ft.folder_id = f.id and t.is_enabled = 1)",
     ).all<{ id: string }>(),
     isVpsUp(env),
-    env.DB.prepare("select value from settings where key = 'stream_tunnel'").first<{ value: string }>(),
+    env.DB.prepare("select value from settings where key = 'air_names'").first<{ value: string }>(),
   ])
   const slots = slotsRes.results.map(toSlot)
   const filled = new Set(showsRes.results.map((r) => r.id))
@@ -446,8 +476,8 @@ export async function programView(env: Env, now: number): Promise<ProgramView> {
   return {
     now: new Date(now).toISOString(),
     vpsUp: vps,
-    tunnel: tunnelRow?.value ?? null,
-    slot: slot ? { title: slot.title, endsAt: change ? new Date(change.at).toISOString() : null } : null,
+    tunnel: null,
+    slot: slot ? { title: slot.title, label: airLabel(slot, parseAirNames(tunnelRow?.value), now), endsAt: change ? new Date(change.at).toISOString() : null } : null,
     nextSlot: change?.slot ? { title: change.slot.title, startsAt: new Date(change.at).toISOString() } : null,
     items: items.map((r) => ({
       id: r.id,

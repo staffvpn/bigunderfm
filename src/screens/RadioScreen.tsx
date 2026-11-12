@@ -7,7 +7,7 @@ import { LikeButton } from '../components/LikeButton'
 import { PauseIcon, PlayIcon } from '../components/Icons'
 import { Socials } from '../components/Socials'
 import { fetchPlaylist, fetchUpNextFilePath, toPlaylistTracks, type PlaylistEntry } from '../lib/tracks'
-import { afterItem, fetchProgram, gridLine, isLeftBehind, stationNow, tuneIn, type Program, type ProgramItem, type TuneIn } from '../lib/program'
+import { afterItem, fetchProgram, isLeftBehind, stationNow, tuneIn, type Program, type ProgramItem, type TuneIn } from '../lib/program'
 
 // Real, always-on broadcast — Icecast (distribution) + Liquidsoap
 // (scheduling/encoding) running on a dedicated VPS, streaming the shared
@@ -75,7 +75,7 @@ function normalize(s: string): string {
   return s.trim().toLowerCase()
 }
 
-export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
+export function RadioScreen() {
   const [userStarted, setUserStarted] = useState(false)
   const [isPaused, setIsPaused] = useState(true)
   // Connecting to a live stream isn't instant (DNS + TLS + TCP + enough
@@ -708,7 +708,7 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       : !!currentEntry?.track.createdAt &&
         currentEntry.track.kind !== 'jingle' &&
         Date.now() - Date.parse(currentEntry.track.createdAt) < NEW_FOR_MS
-  const grid = gridLine(program)
+  const airName = program?.slot?.label ?? program?.slot?.title
   // What a like goes to: the music track on air (not a jingle or an announcement).
   const likeTrackId =
     fallback && fallbackItem
@@ -737,7 +737,8 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       </div>
       <div className="bfm__now">
         <span className="bfm__label">
-          Сейчас в эфире{grid ? ` · ${grid.now}` : ''}
+          <span className="bfm__live" aria-hidden="true" />
+          В эфире{airName ? ` · ${airName}` : ''}
           {isNewTrack ? ' · Новинка' : ''}
         </span>
         <span className="bfm__artist">{nowPlaying?.artist || '—'}</span>
@@ -749,9 +750,6 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       </button>
       <div className="bfm__actions">
         <LikeButton trackId={likeTrackId} />
-        <button type="button" className="bfm__to-grid" onClick={onOpenGrid}>
-          Сетка →
-        </button>
       </div>
       <div className="bfm__next">
         <span className="bfm__next-tag">Дальше</span>

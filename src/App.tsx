@@ -5,12 +5,11 @@ import { joinAppPresence } from './lib/presence'
 import { RadioScreen } from './screens/RadioScreen'
 import { AdminLibrary } from './screens/AdminLibrary'
 import { AdminRadioControls } from './screens/AdminRadioControls'
-import { AdminSchedule } from './screens/AdminSchedule'
 import { GridScreen } from './screens/GridScreen'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import pendant from './assets/pendant/pendant-front.webp'
+import { Splash } from './components/Splash'
 
-type Tab = 'radio' | 'grid' | 'library' | 'controls' | 'schedule'
+type Tab = 'radio' | 'grid' | 'library' | 'controls'
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false)
@@ -27,16 +26,11 @@ export default function App() {
     })
   }, [])
 
-  if (!ready) {
-    return (
-      <div className="app-loading">
-        <img src={pendant} alt="BIGUNDER FM" className="app-loading__logo" />
-      </div>
-    )
-  }
+  if (!ready) return <Splash ready={false} />
 
   return (
-    <div className={isAdmin ? 'app app--admin' : 'app'}>
+    <div className="app">
+      <Splash ready />
       {/* Always mounted, hidden via CSS rather than conditionally rendered
           like the other tabs — RadioScreen owns the live <audio> element and
           its connection state. An admin bouncing to Библиотека/Управление
@@ -47,46 +41,57 @@ export default function App() {
           the stream keep playing in the background across every tab. */}
       <div style={{ display: tab === 'radio' ? 'contents' : 'none' }}>
         <ErrorBoundary label="Эфир">
-          <RadioScreen onOpenGrid={() => setTab('grid')} />
+          <RadioScreen />
         </ErrorBoundary>
       </div>
       {tab === 'library' && isAdmin && (
         <ErrorBoundary label="Библиотека">
-          <AdminLibrary />
-        </ErrorBoundary>
-      )}
-      {tab === 'schedule' && isAdmin && (
-        <ErrorBoundary label="Schedule">
-          <AdminSchedule />
+          <div className="bfm-admin">
+            <header className="bfm__head">
+              BIGUNDER FM
+              <br />
+              Admin
+            </header>
+            <AdminLibrary />
+          </div>
         </ErrorBoundary>
       )}
       {tab === 'controls' && isAdmin && (
         <ErrorBoundary label="Управление">
-          <AdminRadioControls />
+          <div className="bfm-admin">
+            <header className="bfm__head">
+              BIGUNDER FM
+              <br />
+              Admin
+            </header>
+            <AdminRadioControls />
+          </div>
         </ErrorBoundary>
       )}
       {tab === 'grid' && (
         <ErrorBoundary label="Сетка">
-          <GridScreen onBack={() => setTab('radio')} />
+          <GridScreen />
         </ErrorBoundary>
       )}
 
-      {isAdmin && (
-        <nav className="app__admin-nav">
-          <button className={tab === 'radio' || tab === 'grid' ? 'is-active' : ''} onClick={() => setTab('radio')}>
-            Эфир
-          </button>
+      <nav className="app__admin-nav">
+        <button className={tab === 'radio' ? 'is-active' : ''} onClick={() => setTab('radio')}>
+          Эфир
+        </button>
+        <button className={tab === 'grid' ? 'is-active' : ''} onClick={() => setTab('grid')}>
+          Сетка
+        </button>
+        {isAdmin && (
           <button className={tab === 'library' ? 'is-active' : ''} onClick={() => setTab('library')}>
-            Library
+            Библиотека
           </button>
-          <button className={tab === 'schedule' ? 'is-active' : ''} onClick={() => setTab('schedule')}>
-            Schedule
-          </button>
+        )}
+        {isAdmin && (
           <button className={tab === 'controls' ? 'is-active' : ''} onClick={() => setTab('controls')}>
-            Admin
+            Админ
           </button>
-        </nav>
-      )}
+        )}
+      </nav>
     </div>
   )
 }
