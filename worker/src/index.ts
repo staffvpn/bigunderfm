@@ -690,7 +690,7 @@ async function handleGrid(req: Request, env: Env, url: URL): Promise<Response> {
     likeUser(req, env, url.searchParams.get('device')),
     env.DB.prepare(
       `select p.track_id, p.starts_at, t.title, t.artist from program p join tracks t on t.id = p.track_id
-       where p.ends_at <= ? and t.kind = 'track' order by p.starts_at desc limit 5`,
+       where p.ends_at <= ? and t.kind = 'track' order by p.starts_at desc limit 2`,
     )
       .bind(iso)
       .all<{ track_id: string; starts_at: string; title: string; artist: string }>(),
@@ -700,7 +700,8 @@ async function handleGrid(req: Request, env: Env, url: URL): Promise<Response> {
   ])
   const idx = view.items.findIndex((it) => Date.parse(it.startsAt) <= nowMs && Date.parse(it.endsAt) > nowMs)
   const current = idx >= 0 ? view.items[idx] : null
-  const next = view.items.slice(idx + 1).find((it) => it.kind !== 'jingle' && it.kind !== 'timer') ?? null
+  const upcoming = view.items.slice(idx + 1).filter((it) => it.kind !== 'jingle' && it.kind !== 'timer').slice(0, 3)
+  const next = upcoming[0] ?? null
   const likeable = !!current && current.kind !== 'jingle' && current.kind !== 'timer'
   const ids = [...new Set([...pastRes.results.map((r) => r.track_id), ...(likeable ? [current!.track.id] : [])])]
   const likes = new Map<string, { n: number; mine: number }>()
@@ -729,6 +730,7 @@ async function handleGrid(req: Request, env: Env, url: URL): Promise<Response> {
         }
       : null,
     next: next ? { startsAt: next.startsAt, artist: next.track.artist, title: next.track.title } : null,
+    upcoming: upcoming.map((it) => ({ startsAt: it.startsAt, artist: it.track.artist, title: it.track.title })),
     past: pastRes.results
       .reverse()
       .map((r) => ({ trackId: r.track_id, startsAt: r.starts_at, artist: r.artist, title: r.title, ...like(r.track_id) })),

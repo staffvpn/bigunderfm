@@ -23,6 +23,7 @@ interface Grid {
   slot: string | null
   current: (Omit<GridTrack, 'trackId'> & { trackId: string | null; endsAt: string; isNew: boolean }) | null
   next: { startsAt: string; artist: string; title: string } | null
+  upcoming?: { startsAt: string; artist: string; title: string }[]
   past: GridTrack[]
   shows: { title: string; days: string; startMinute: number }[]
 }
@@ -157,14 +158,14 @@ export function GridScreen() {
           </div>
         </>
       )}
-      {grid?.next && (
-        <div className="bfm-grid__row">
-          <span className="bfm-grid__time">{clock(grid.next.startsAt)}</span>
-          <span className="bfm-grid__artist">{grid.next.artist}</span>
-          <span className="bfm-grid__track">{grid.next.title}</span>
-          <span>Дальше</span>
+      {(grid?.upcoming ?? (grid?.next ? [grid.next] : [])).map((t, i) => (
+        <div className="bfm-grid__row" key={t.startsAt}>
+          <span className="bfm-grid__time">{clock(t.startsAt)}</span>
+          <span className="bfm-grid__artist">{t.artist}</span>
+          <span className="bfm-grid__track">{t.title}</span>
+          <span>{i === 0 ? 'Дальше' : ''}</span>
         </div>
-      )}
+      ))}
       </div>
       {grid && grid.shows.length > 0 && (
         <>
