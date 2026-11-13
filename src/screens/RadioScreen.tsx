@@ -168,11 +168,14 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
     }, isRelayRoute() ? RELAY_CONNECT_TIMEOUT_MS : STREAM_CONNECT_TIMEOUT_MS)
   }
 
+  // Wall-clock moment the playing file was at 0:00, so a seek from the lock screen can be undone.
+  const trackZeroAtRef = useRef<number | null>(null)
   function startFallbackAudio(track: { artist: string; title: string; filePath: string }, offsetSeconds: number): boolean {
     const audio = audioRef.current
     if (!audio) return false
     setNowPlaying({ artist: track.artist, title: track.title })
     pendingSeekRef.current = offsetSeconds > 2 ? offsetSeconds : null
+    trackZeroAtRef.current = Date.now() - offsetSeconds * 1000
     connectingRef.current = true
     setIsBuffering(true)
     detachLive()
@@ -471,6 +474,19 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
         }
       }
     }
+    // Radio cannot be wound: a seek from the lock screen snaps back to where the air is.
+    function handleSeeked() {
+      if (!audio || !fallbackRef.current || trackZeroAtRef.current === null) return
+      const expected = (Date.now() - trackZeroAtRef.current) / 1000
+      if (expected < 0 || (Number.isFinite(audio.duration) && expected > audio.duration - 1)) return
+      if (Math.abs(audio.currentTime - expected) > 3) {
+        try {
+          audio.currentTime = expected
+        } catch {
+          // ignore
+        }
+      }
+    }
     function handleAudioError() {
       connectingRef.current = false
       if (fallbackRef.current) {
@@ -518,6 +534,7 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
     audio?.addEventListener('stalled', handleWaiting)
     audio?.addEventListener('playing', handlePlaying)
     audio?.addEventListener('loadedmetadata', handleLoadedMetadata)
+    audio?.addEventListener('seeked', handleSeeked)
     audio?.addEventListener('error', handleAudioError)
     audio?.addEventListener('ended', handleEnded)
 
@@ -533,6 +550,7 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       audio?.removeEventListener('stalled', handleWaiting)
       audio?.removeEventListener('playing', handlePlaying)
       audio?.removeEventListener('loadedmetadata', handleLoadedMetadata)
+      audio?.removeEventListener('seeked', handleSeeked)
       audio?.removeEventListener('error', handleAudioError)
       audio?.removeEventListener('ended', handleEnded)
       audio?.pause()
@@ -623,7 +641,24 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
     if (!('mediaSession' in navigator)) return
     navigator.mediaSession.setActionHandler('play', () => setPlaybackIntent(true))
     navigator.mediaSession.setActionHandler('pause', () => setPlaybackIntent(false))
+    // Live radio: the lock screen gets no winding. A handler that does nothing
+    // takes the place of the system's own seeking.
+    const noWinding = ['seekto', 'seekforward', 'seekbackward', 'previoustrack', 'nexttrack'] as MediaSessionAction[]
+    for (const action of noWinding) {
+      try {
+        navigator.mediaSession.setActionHandler(action, () => {})
+      } catch {
+        // not supported here
+      }
+    }
     return () => {
+      for (const action of noWinding) {
+        try {
+          navigator.mediaSession.setActionHandler(action, null)
+        } catch {
+          // not supported here
+        }
+      }
       navigator.mediaSession.setActionHandler('play', null)
       navigator.mediaSession.setActionHandler('pause', null)
     }

@@ -93,7 +93,12 @@ export function afterItem(program: Program, finishedId: number | null): TuneIn |
 
 /** True when this phone is still on a track the station left a while ago (e.g. an admin skipped it). */
 export function isLeftBehind(program: Program, playingId: number | null): boolean {
-  if (playingId === null || program.items.some((it) => it.id === playingId)) return false
+  if (playingId === null) return false
+  const playing = program.items.find((it) => it.id === playingId)
+  if (playing) {
+    // Still in the plan, but cut short (an admin skipped it): the plan already moved on.
+    return stationNow(program) - Date.parse(playing.endsAt) > 8000
+  }
   const live = tuneIn(program)
   if (!live) return false
   return (stationNow(program) - Date.parse(live.item.startsAt)) / 1000 > MAX_LAG_SECONDS + 10
