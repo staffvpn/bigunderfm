@@ -690,7 +690,7 @@ async function handleGrid(req: Request, env: Env, url: URL): Promise<Response> {
     likeUser(req, env, url.searchParams.get('device')),
     env.DB.prepare(
       `select p.track_id, p.starts_at, t.title, t.artist from program p join tracks t on t.id = p.track_id
-       where p.ends_at <= ? and t.kind = 'track' order by p.starts_at desc limit 2`,
+       where p.ends_at <= ? and t.kind = 'track' order by p.starts_at desc limit 4`,
     )
       .bind(iso)
       .all<{ track_id: string; starts_at: string; title: string; artist: string }>(),
