@@ -8,3 +8,5 @@ dist
 .wrangler
 supabase/.temp
 .dev.vars
+android/.gradle
+android/**/build
