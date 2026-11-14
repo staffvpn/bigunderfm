@@ -170,12 +170,14 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
 
   // Wall-clock moment the playing file was at 0:00, so a seek from the lock screen can be undone.
   const trackZeroAtRef = useRef<number | null>(null)
+  const fadeInRef = useRef(false)
   function startFallbackAudio(track: { artist: string; title: string; filePath: string }, offsetSeconds: number): boolean {
     const audio = audioRef.current
     if (!audio) return false
     setNowPlaying({ artist: track.artist, title: track.title })
     pendingSeekRef.current = offsetSeconds > 2 ? offsetSeconds : null
     trackZeroAtRef.current = Date.now() - offsetSeconds * 1000
+    fadeInRef.current = offsetSeconds <= 2
     connectingRef.current = true
     setIsBuffering(true)
     detachLive()
@@ -239,6 +241,41 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
         cuttingRef.current = false
       })
     }, 1000)
+    return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Smooth joins: each track fades out over its last seconds and the next one
+  // fades in, the switch falling in the quiet between them. (iPhones ignore
+  // volume changes on audio elements: there the tracks simply follow on.)
+  useEffect(() => {
+    const FADE_OUT = 1.6
+    const FADE_IN = 0.9
+    const timer = setInterval(() => {
+      const audio = audioRef.current
+      if (!audio) return
+      const id = fallbackItemIdRef.current
+      const item = id !== null ? programRef.current?.items.find((it) => it.id === id) : undefined
+      if (!fallbackRef.current || isPausedRef.current || !item || item.kind === 'jingle' || !Number.isFinite(audio.duration)) {
+        if (audio.volume !== 1) audio.volume = 1
+        return
+      }
+      const planned = (Date.parse(item.endsAt) - Date.parse(item.startsAt)) / 1000
+      const end = Math.min(audio.duration, planned)
+      const t = audio.currentTime
+      const rest = end - t
+      let v = Math.min(1, Math.max(0, rest / FADE_OUT))
+      if (fadeInRef.current && t < FADE_IN) v = Math.min(v, Math.max(0, t / FADE_IN))
+      v = Math.round(v * 100) / 100
+      if (audio.volume !== v) audio.volume = v
+      // Faded out: move on now rather than wait for the file's own end.
+      if (rest < 0.15 && rest > -1 && !cuttingRef.current && !audio.paused) {
+        cuttingRef.current = true
+        advanceFallback().finally(() => {
+          cuttingRef.current = false
+        })
+      }
+    }, 50)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
