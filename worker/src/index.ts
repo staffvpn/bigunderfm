@@ -13,6 +13,7 @@ import {
   planAhead,
   programNow,
   programView,
+  cutDeadCurrent,
   parseAirNames,
   queueAt,
   removeUpcoming,
@@ -1213,6 +1214,11 @@ async function sampleListeners(env: Env): Promise<void> {
     // VPS down: the app plays the planned timeline. Icecast can't count
     // listeners then, so the number of people with the app open stands in.
     try {
+      // Safety net: whatever happened to the track on air, the air goes on within a minute.
+      if (await cutDeadCurrent(env, nowMs)) {
+        await replanFuture(env, nowMs)
+        await dropProgramCache(env)
+      }
       await planAhead(env, nowMs)
       const now = await programNow(env, nowMs)
       title = now && now.kind !== 'jingle' ? airTitle(now.artist, now.title) : ''

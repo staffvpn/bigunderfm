@@ -369,8 +369,27 @@ export async function removeUpcoming(env: Env, now: number, itemId: number): Pro
   await rebuild(env, now, (list) => list.filter((it) => it.id !== itemId))
 }
 
+/**
+ * The track on air was deleted or switched off: its play ends now, so the
+ * timeline never points at a file that is gone (listeners would be left on
+ * the last track they had, and the grid would show nothing). True if it cut.
+ */
+export async function cutDeadCurrent(env: Env, now: number): Promise<boolean> {
+  const iso = new Date(now).toISOString()
+  const row = await env.DB.prepare(
+    `select p.id, t.id as tid, t.is_enabled from program p left join tracks t on t.id = p.track_id
+     where p.starts_at <= ? and p.ends_at > ? order by p.starts_at desc limit 1`,
+  )
+    .bind(iso, iso)
+    .first<{ id: number; tid: string | null; is_enabled: number | null }>()
+  if (!row || (row.tid && row.is_enabled)) return false
+  await env.DB.prepare('update program set ends_at = ? where id = ?').bind(iso, row.id).run()
+  return true
+}
+
 /** Re-lays the future after the library, the folders or the timers changed. */
 export async function replanFuture(env: Env, now: number): Promise<void> {
+  await cutDeadCurrent(env, now)
   await rebuild(env, now)
 }
 
