@@ -244,6 +244,15 @@ const DEMO_HELP =
   `Слушатели ставят лайки. ${DEMO_LIKES} лайков, и трек попадает в основную ротацию радио.\n\n` +
   'Присылай только свою музыку. Один трек в сутки.'
 
+/** What a new listener sees: the radio first, demos as a quiet second line. */
+async function sendWelcome(env: Env, chatId: number): Promise<void> {
+  await callTelegram(env, 'sendMessage', {
+    chat_id: chatId,
+    text: 'BIGUNDER FM. Independent Hip-Hop Radio, 24/7.\n\nЖми «Слушать», чтобы открыть эфир.\n\nДелаешь музыку? Отправь /demo, и твой трек может попасть в эфир.',
+    reply_markup: { inline_keyboard: [[{ text: 'Слушать', web_app: { url: 'https://bigunderfm.pages.dev/' } }]] },
+  })
+}
+
 async function adminIds(env: Env): Promise<number[]> {
   const { results } = await env.DB.prepare('select telegram_user_id from admins').all<{ telegram_user_id: number }>()
   return results.map((r) => Number(r.telegram_user_id))
@@ -404,7 +413,12 @@ export async function handleBotUpdate(update: any, env: Env): Promise<void> {
     if (message.chat.id !== message.from.id) return
     if (message.audio) await processDemoMessage(env, message, message.audio)
     else if (message.document?.mime_type?.startsWith('audio/')) await sendMessage(env, message.chat.id, 'Пришли трек как аудио в mp3 или m4a, а не документом.')
-    else if (/^\/(start|demo)/.test(message.text?.trim() ?? '')) await sendMessage(env, message.chat.id, DEMO_HELP)
+    else {
+      const text = message.text?.trim() ?? ''
+      // "Прислать демо" in the app opens the bot as /start demo; /demo works too.
+      if (/^\/start\s+demo\b/.test(text) || /^\/demo\b/.test(text)) await sendMessage(env, message.chat.id, DEMO_HELP)
+      else if (/^\/start\b/.test(text)) await sendWelcome(env, message.chat.id)
+    }
     return
   }
 
