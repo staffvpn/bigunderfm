@@ -240,7 +240,10 @@ async function handleUpdateTrack(req: Request, env: Env, id: string): Promise<Re
     .run()
   if (meta.changes === 0) return json({ error: 'not found' }, 404)
   // A track taken off air must not stay in what is already planned.
-  if (body.isEnabled === false || body.kind !== undefined) await replanFuture(env, Date.now())
+  if (body.isEnabled === false || body.kind !== undefined) {
+    await replanFuture(env, Date.now())
+    await dropProgramCache(env)
+  }
   return json({ ok: true })
 }
 
@@ -252,6 +255,7 @@ async function handleDelete(env: Env, id: string): Promise<Response> {
   // playlist_items and folder_tracks rows go with it (ON DELETE CASCADE).
   await env.DB.prepare('delete from tracks where id = ?').bind(id).run()
   await replanFuture(env, Date.now())
+  await dropProgramCache(env)
   const keys = [track.file_path, ...(track.cover_path ? [track.cover_path] : [])]
   await env.MEDIA.delete(keys)
   return json({ ok: true })
