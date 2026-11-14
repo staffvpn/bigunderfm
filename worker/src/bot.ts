@@ -16,7 +16,7 @@ interface TelegramAudio {
 interface TelegramMessage {
   message_id: number
   chat: { id: number }
-  from?: { id: number }
+  from?: { id: number; username?: string; first_name?: string }
   text?: string
   audio?: TelegramAudio
   document?: { file_name?: string; mime_type?: string }
@@ -231,11 +231,182 @@ async function processAudioMessage(env: Env, message: TelegramMessage, audio: Te
   await deleteMessage(env, chatId, message.message_id)
 }
 
+// ---------- open label: demos from artists ----------
+
+export const DEMO_FOLDER = 'show-demo'
+export const DEMO_LIKES = 5
+const DEMO_MIN_SECONDS = 60
+const DEMO_MAX_SECONDS = 7 * 60
+const DEMO_HELP =
+  'BIGUNDER FM принимает демо.\n\n' +
+  'Пришли сюда один трек файлом (mp3 или m4a, до 20 МБ, от 1 до 7 минут). Укажи в файле имя артиста и название.\n\n' +
+  'Что дальше: команда слушает трек, и если он подходит, он выходит в DEMO HOUR каждую ночь с 01:00 до 02:00 по Москве. ' +
+  `Слушатели ставят лайки. ${DEMO_LIKES} лайков, и трек попадает в основную ротацию радио.\n\n` +
+  'Присылай только свою музыку. Один трек в сутки.'
+
+async function adminIds(env: Env): Promise<number[]> {
+  const { results } = await env.DB.prepare('select telegram_user_id from admins').all<{ telegram_user_id: number }>()
+  return results.map((r) => Number(r.telegram_user_id))
+}
+
+async function processDemoMessage(env: Env, message: TelegramMessage, audio: TelegramAudio): Promise<void> {
+  const chatId = message.chat.id
+  const from = message.from!
+  if (!audio.duration || audio.duration < DEMO_MIN_SECONDS || audio.duration > DEMO_MAX_SECONDS) {
+    await sendMessage(env, chatId, 'Трек должен быть от 1 до 7 минут. Миксы и отрывки не принимаем.')
+    return
+  }
+  const contentType = audioContentType(audio.file_name, audio.mime_type)
+  if (!contentType) {
+    await sendMessage(env, chatId, 'Формат не подходит. Нужен mp3 или m4a.')
+    return
+  }
+  if (audio.file_size && audio.file_size > TELEGRAM_DOWNLOAD_LIMIT) {
+    await sendMessage(env, chatId, 'Файл больше 20 МБ. Пришли mp3 поменьше.')
+    return
+  }
+  const dayAgo = new Date(Date.now() - 24 * 3600_000).toISOString()
+  const recent = await env.DB.prepare("select 1 as ok from demos where tg_user_id = ? and created_at > ? and status != 'rejected'")
+    .bind(from.id, dayAgo)
+    .first()
+  if (recent) {
+    await sendMessage(env, chatId, 'Сегодня ты уже присылал демо. Следующий трек можно отправить через сутки.')
+    return
+  }
+  const title = audio.title?.trim()
+  const artist = audio.performer?.trim()
+  if (!title || !artist) {
+    await sendMessage(env, chatId, 'В файле не указаны артист и название. Заполни их (в свойствах файла или при отправке) и пришли ещё раз.')
+    return
+  }
+
+  const fileInfo = await callTelegram(env, 'getFile', { file_id: audio.file_id })
+  const telegramFilePath = fileInfo?.result?.file_path
+  const fileRes = telegramFilePath ? await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${telegramFilePath}`) : null
+  if (!fileRes?.ok) {
+    await sendMessage(env, chatId, 'Не получилось скачать файл. Попробуй отправить ещё раз.')
+    return
+  }
+  const bytes = await fileRes.arrayBuffer()
+  const key = buildTrackKey(audio.file_name)
+  const trackId = crypto.randomUUID()
+  try {
+    await env.MEDIA.put(key, bytes, { httpMetadata: { contentType } })
+    const position = await nextPlaylistPosition(env)
+    await env.DB.batch([
+      // Off until an admin lets it on air.
+      env.DB.prepare(
+        'insert into tracks (id, title, artist, file_path, duration_seconds, file_size_bytes, is_enabled, created_at) values (?, ?, ?, ?, ?, ?, 0, ?)',
+      ).bind(trackId, title.slice(0, 120), artist.slice(0, 120), key, audio.duration, audio.file_size ?? bytes.byteLength, nowIso()),
+      env.DB.prepare('insert into playlist_items (id, track_id, position) values (?, ?, ?)').bind(crypto.randomUUID(), trackId, position),
+      env.DB.prepare('insert into demos (track_id, tg_user_id, username, status, created_at) values (?, ?, ?, ?, ?)').bind(
+        trackId,
+        from.id,
+        from.username ?? null,
+        'pending',
+        nowIso(),
+      ),
+    ])
+  } catch (err) {
+    await env.MEDIA.delete(key).catch(() => {})
+    console.error('demo upload failed', err)
+    await sendMessage(env, chatId, 'Не получилось принять трек. Попробуй ещё раз позже.')
+    return
+  }
+
+  await sendMessage(env, chatId, `Демо принято: ${artist} — ${title}. Команда послушает и ответит здесь.`)
+  const sender = from.username ? `@${from.username}` : (from.first_name ?? `id ${from.id}`)
+  for (const admin of await adminIds(env)) {
+    await callTelegram(env, 'sendAudio', {
+      chat_id: admin,
+      audio: audio.file_id,
+      caption: `ДЕМО от ${sender}\n${artist} — ${title}`,
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: 'В эфир', callback_data: `demo:ok:${trackId}` },
+            { text: 'Отклонить', callback_data: `demo:no:${trackId}` },
+          ],
+        ],
+      },
+    })
+  }
+}
+
+async function handleDemoDecision(env: Env, query: any): Promise<void> {
+  const [, verdict, trackId] = String(query.data ?? '').split(':')
+  const answer = (text: string) => callTelegram(env, 'answerCallbackQuery', { callback_query_id: query.id, text })
+  if (!(await isAdmin(env, query.from?.id))) return void (await answer('Только для админов'))
+  const demo = await env.DB.prepare(
+    'select d.tg_user_id, d.status, t.title, t.artist, t.file_path from demos d left join tracks t on t.id = d.track_id where d.track_id = ?',
+  )
+    .bind(trackId)
+    .first<{ tg_user_id: number; status: string; title: string | null; artist: string | null; file_path: string | null }>()
+  if (!demo || demo.status !== 'pending' || !demo.file_path) return void (await answer('По этому демо уже решили'))
+  const name = `${demo.artist} — ${demo.title}`
+  if (verdict === 'ok') {
+    await env.DB.batch([
+      env.DB.prepare('update tracks set is_enabled = 1 where id = ?').bind(trackId),
+      env.DB.prepare('insert or ignore into folder_tracks (folder_id, track_id) values (?, ?)').bind(DEMO_FOLDER, trackId),
+      env.DB.prepare("update demos set status = 'demo', decided_at = ? where track_id = ?").bind(nowIso(), trackId),
+    ])
+    await answer('В эфире с ближайшего DEMO HOUR')
+    await sendMessage(
+      env,
+      demo.tg_user_id,
+      `Твой трек ${name} взяли в DEMO HOUR. Он звучит каждую ночь с 01:00 до 02:00 по Москве. ` +
+        `Зови своих слушать и лайкать: ${DEMO_LIKES} лайков, и трек попадёт в основную ротацию BIGUNDER FM.`,
+    )
+  } else {
+    await env.DB.batch([
+      env.DB.prepare('delete from tracks where id = ?').bind(trackId),
+      env.DB.prepare("update demos set status = 'rejected', decided_at = ? where track_id = ?").bind(nowIso(), trackId),
+    ])
+    await env.MEDIA.delete(demo.file_path).catch(() => {})
+    await answer('Отклонено')
+    await sendMessage(env, demo.tg_user_id, `Трек ${name} в этот раз не взяли. Присылай следующий, слушаем всё.`)
+  }
+  if (query.message) {
+    await callTelegram(env, 'editMessageCaption', {
+      chat_id: query.message.chat.id,
+      message_id: query.message.message_id,
+      caption: `${query.message.caption ?? name}\n\n${verdict === 'ok' ? 'ВЗЯЛИ В DEMO HOUR' : 'ОТКЛОНЕНО'}`,
+    })
+  }
+}
+
+/** A like just landed: a demo with enough of them moves into the main rotation. */
+export async function promoteDemoIfLiked(env: Env, trackId: string): Promise<void> {
+  const demo = await env.DB.prepare("select tg_user_id from demos where track_id = ? and status = 'demo'").bind(trackId).first<{ tg_user_id: number }>()
+  if (!demo) return
+  const likes = await env.DB.prepare('select count(*) as n from track_likes where track_id = ?').bind(trackId).first<{ n: number }>()
+  if ((likes?.n ?? 0) < DEMO_LIKES) return
+  const track = await env.DB.prepare('select title, artist from tracks where id = ?').bind(trackId).first<{ title: string; artist: string }>()
+  await env.DB.batch([
+    // Out of the demo folder: an unfiled track plays in every day part.
+    env.DB.prepare('delete from folder_tracks where folder_id = ? and track_id = ?').bind(DEMO_FOLDER, trackId),
+    env.DB.prepare("update demos set status = 'promoted', decided_at = ? where track_id = ?").bind(nowIso(), trackId),
+  ])
+  const name = track ? `${track.artist} — ${track.title}` : 'трек'
+  await sendMessage(env, demo.tg_user_id, `${name} набрал ${DEMO_LIKES} лайков и теперь в основной ротации BIGUNDER FM. Поздравляем.`)
+  for (const admin of await adminIds(env)) await sendMessage(env, admin, `Демо ${name} набрало ${DEMO_LIKES} лайков и перешло в ротацию (лежит в «Без папки»).`)
+}
+
 export async function handleBotUpdate(update: any, env: Env): Promise<void> {
+  if (update?.callback_query?.data?.startsWith('demo:')) {
+    await handleDemoDecision(env, update.callback_query)
+    return
+  }
   const message: TelegramMessage | undefined = update?.message
   if (!message?.from) return
-  // Silently ignore everyone who is not an admin.
-  if (!(await isAdmin(env, message.from.id))) return
+  if (!(await isAdmin(env, message.from.id))) {
+    // Everyone else: the open label. Private chats only.
+    if (message.chat.id !== message.from.id) return
+    if (message.audio) await processDemoMessage(env, message, message.audio)
+    else if (message.document?.mime_type?.startsWith('audio/')) await sendMessage(env, message.chat.id, 'Пришли трек как аудио в mp3 или m4a, а не документом.')
+    else if (/^\/(start|demo)/.test(message.text?.trim() ?? '')) await sendMessage(env, message.chat.id, DEMO_HELP)
+    return
+  }
 
   if (message.text?.trim().toLowerCase().split('@')[0] === '/status') {
     await sendMessage(env, message.chat.id, await buildStatusText(env))

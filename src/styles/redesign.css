@@ -662,3 +662,13 @@
   background: #0a0a0a;
   color: #ffffff;
 }
+
+.bfm-socials {
+  gap: 12px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.bfm-socials a:first-child {
+  color: #0a0a0a;
+  font-weight: 700;
+}

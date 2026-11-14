@@ -1,5 +1,5 @@
 import type { Env } from './env'
-import { handleBotUpdate, callTelegram } from './bot'
+import { handleBotUpdate, callTelegram, promoteDemoIfLiked } from './bot'
 import { signJwt, verifyJwt, type Claims } from './jwt'
 import { verifyInitData } from './telegramAuth'
 import { CORS_HEADERS, audioContentType, buildMediaKey, buildTrackKey, imageContentType, json, nowIso, safeEqual, sleep } from './util'
@@ -682,6 +682,7 @@ async function handleLike(req: Request, env: Env): Promise<Response> {
   const track = await env.DB.prepare("select id from tracks where id = ? and kind = 'track'").bind(body.trackId).first()
   if (!track) return json({ error: 'Трек не найден' }, 404)
   await env.DB.prepare('insert or ignore into track_likes (track_id, user_key, created_at) values (?, ?, ?)').bind(body.trackId, user, nowIso()).run()
+  await promoteDemoIfLiked(env, body.trackId).catch((err) => console.error('demo promotion failed', err))
   return json(await likeState(env, body.trackId, user))
 }
 
@@ -1231,6 +1232,20 @@ async function sampleListeners(env: Env): Promise<void> {
       console.error('planning failed', err)
       return
     }
+  }
+  // Once: the bot also needs button presses (demo decisions), not only messages.
+  try {
+    const done = await env.DB.prepare("select 1 as ok from settings where key = 'bot_updates_v2'").first()
+    if (!done) {
+      const res = await callTelegram(env, 'setWebhook', {
+        url: 'https://bigunderfm-api.fillat0ff321.workers.dev/bot/webhook',
+        secret_token: env.WEBHOOK_SECRET,
+        allowed_updates: ['message', 'callback_query'],
+      })
+      if (res?.ok) await env.DB.prepare("insert or replace into settings (key, value) values ('bot_updates_v2', ?)").bind(nowIso()).run()
+    }
+  } catch (err) {
+    console.error('webhook setup failed', err)
   }
   if (title) await recordPlayed(env, title)
   await env.DB.prepare('insert or replace into listener_samples (sampled_at, listeners) values (?, ?)').bind(nowIso(), listeners).run()

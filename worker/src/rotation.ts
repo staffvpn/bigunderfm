@@ -22,6 +22,8 @@ export const NEW_EVERY = 5 // every 5th track is a recent upload
 export const HIT_GAP_MS = 3 * 3600_000 // the same hit at most once per 3 hours
 export const NEW_GAP_MS = 6 * 3600_000
 export const NEW_FOR_MS = 14 * 86_400_000 // a track counts as new for two weeks
+/** A show does not repeat a track within this time. */
+export const SHOW_GAP_MS = 3 * 3600_000
 export const ARTIST_GAP = 3 // tracks before the same artist may play again
 
 export interface RTrack {
@@ -190,7 +192,12 @@ export function pickNext(input: RotationInput): Pick | null {
   const { tracks, folders, slots, recent, now } = input
   if (tracks.length === 0) return null
   const usable = slotUsable(tracks, folders)
-  const slot = activeSlot(slots, now, usable)
+  // A show plays each of its tracks once per airing: when all of them have
+  // been heard in the last hours, the air goes back to the day part under it.
+  const showFolder = (sl: RSlot) => folders.find((f) => f.id === sl.folderId)?.kind === 'show'
+  const showFresh = (sl: RSlot) => poolFor(sl, tracks, folders).filter((t) => now - (input.lastPlayed.get(t.id) ?? 0) >= SHOW_GAP_MS)
+  const usableNow = (sl: RSlot) => usable(sl) && (!showFolder(sl) || showFresh(sl).length > 0)
+  const slot = activeSlot(slots, now, usableNow)
   const change = nextSlotChange(slots, now, usable)
   const roomSeconds = change ? (change.at - now) / 1000 : null
 
@@ -207,7 +214,7 @@ export function pickNext(input: RotationInput): Pick | null {
     return { track: group[Math.floor(rng() * group.length)] ?? group[0], kind: 'jingle', slot }
   }
 
-  let pool = poolFor(slot, tracks, folders)
+  let pool = slot && showFolder(slot) ? showFresh(slot) : poolFor(slot, tracks, folders)
   if (pool.length === 0) pool = tracks.filter((t) => t.kind === 'track')
   if (pool.length === 0) return { track: jingles[0], kind: 'jingle', slot }
 

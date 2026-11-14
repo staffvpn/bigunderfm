@@ -1,4 +1,5 @@
 const LINKS = [
+  { name: 'Прислать демо', href: 'https://t.me/bigunderadiobot?start=demo' },
   { name: 'Telegram', href: 'https://t.me/bigunderparty' },
   { name: 'Instagram', href: 'https://www.instagram.com/bigunderpromo?stkn=dGw3MWdibmprN2w%3D&utm_source=qr' },
   { name: 'VK', href: 'https://vk.ru/bigunderp' },
