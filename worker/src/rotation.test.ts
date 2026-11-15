@@ -107,16 +107,16 @@ describe('rotation', () => {
     expect(plays[plays.length - 1].id.startsWith('n')).toBe(true)
   })
 
-  it('brings a hit back every fourth track, but not the same one within three hours', () => {
+  it('brings a hit back every sixth track, but not the same one within four hours', () => {
     const tracks = library()
     tracks[20].isHit = true // e0
     tracks[21].isHit = true // e1
-    const plays = run(tracks, msk('2026-11-09T17:00:00'), 40)
+    const plays = run(tracks, msk('2026-11-09T17:00:00'), 200)
     const hits = plays.filter((p) => p.kind === 'hit')
     expect(hits.length).toBeGreaterThanOrEqual(2)
     for (const id of ['e0', 'e1']) {
       const times = hits.filter((p) => p.id === id).map((p) => p.at)
-      for (let i = 1; i < times.length; i++) expect(times[i] - times[i - 1]).toBeGreaterThanOrEqual(3 * 3600_000)
+      for (let i = 1; i < times.length; i++) expect(times[i] - times[i - 1]).toBeGreaterThanOrEqual(4 * 3600_000)
     }
   })
 
@@ -133,7 +133,7 @@ describe('rotation', () => {
   it('gives new uploads extra spins', () => {
     const start = msk('2026-11-09T08:00:00')
     const tracks = [...big(), track('fresh', [], { createdAt: start - 86_400_000 })]
-    const plays = run(tracks, start, 130)
+    const plays = run(tracks, start, 300)
     expect(plays.filter((p) => p.id === 'fresh').length).toBeGreaterThanOrEqual(2)
     expect(plays.some((p) => p.kind === 'new' && p.id === 'fresh')).toBe(true)
   })

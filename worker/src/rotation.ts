@@ -17,10 +17,10 @@
 export const STATION_UTC_OFFSET_MIN = 180
 
 export const JINGLE_EVERY = 5 // tracks between jingles
-export const HIT_EVERY = 4 // every 4th track is a hit
-export const NEW_EVERY = 5 // every 5th track is a recent upload
-export const HIT_GAP_MS = 3 * 3600_000 // the same hit at most once per 3 hours
-export const NEW_GAP_MS = 6 * 3600_000
+export const HIT_EVERY = 6 // every 6th track is a hit
+export const NEW_EVERY = 8 // every 8th track is a recent upload
+export const HIT_GAP_MS = 4 * 3600_000
+export const NEW_GAP_MS = 12 * 3600_000
 export const NEW_FOR_MS = 14 * 86_400_000 // a track counts as new for two weeks
 /** A show does not repeat a track within this time. */
 export const SHOW_GAP_MS = 3 * 3600_000
@@ -205,7 +205,7 @@ export function pickNext(input: RotationInput): Pick | null {
   const jingles = tracks.filter((t) => t.kind === 'jingle')
   let sinceJingle = 0
   for (let i = recent.length - 1; i >= 0 && recent[i].kind !== 'jingle'; i--) sinceJingle++
-  if (jingles.length > 0 && recent.length > 0 && sinceJingle >= JINGLE_EVERY) {
+  if (jingles.length > 0 && recent.length > 0 && sinceJingle >= JINGLE_EVERY && recent[recent.length - 1].kind !== 'jingle') {
     const lastByKey = new Map<string, number>()
     for (const j of jingles) lastByKey.set(jingleKey(j), Math.max(lastByKey.get(jingleKey(j)) ?? 0, input.lastPlayed.get(j.id) ?? 0))
     const oldest = Math.min(...lastByKey.values())

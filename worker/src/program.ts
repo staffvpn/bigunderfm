@@ -241,7 +241,53 @@ interface Preset {
  * A timer is exact: the track before it is chosen to end as close to the
  * moment as possible and its tail is cut there.
  */
+// ---------- one planner at a time ----------
+// The cron, a skip, a folder change and a delete can all re-plan at once.
+// Two planners working from the same old picture each append their own
+// tracks: a jingle twice in a row, a hit back after ten minutes. A short
+// lock in settings lets only one plan at a time.
+const LOCK_KEY = 'plan_lock'
+const LOCK_TTL_MS = 25_000
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+async function acquirePlanLock(env: Env, waitMs: number): Promise<string | null> {
+  const token = crypto.randomUUID()
+  const deadline = Date.now() + waitMs
+  for (;;) {
+    const now = Date.now()
+    await env.DB.prepare("insert or ignore into settings (key, value) values (?, '0|')").bind(LOCK_KEY).run()
+    const res = await env.DB.prepare(
+      "update settings set value = ? where key = ? and cast(substr(value, 1, instr(value, '|') - 1) as integer) < ?",
+    )
+      .bind(`${now + LOCK_TTL_MS}|${token}`, LOCK_KEY, now)
+      .run()
+    if (res.meta.changes > 0) return token
+    if (Date.now() >= deadline) return null
+    await sleep(250)
+  }
+}
+
+async function releasePlanLock(env: Env, token: string): Promise<void> {
+  await env.DB.prepare("update settings set value = '0|' where key = ? and value like ?").bind(LOCK_KEY, `%|${token}`).run()
+}
+
+/** Runs fn as the only planner. Background top-ups give way; admin actions wait their turn. */
+async function withPlanLock(env: Env, waitMs: number, fn: () => Promise<void>): Promise<void> {
+  const token = await acquirePlanLock(env, waitMs)
+  if (!token && waitMs === 0) return
+  try {
+    await fn()
+  } finally {
+    if (token) await releasePlanLock(env, token)
+  }
+}
+
+/** Keeps about an hour of air planned. Safe to call from anywhere: it takes the planner lock. */
 export async function planAhead(env: Env, now: number, force = false, preset: Preset[] = []): Promise<void> {
+  await withPlanLock(env, force ? 8000 : 0, () => planAheadLocked(env, now, force, preset))
+}
+
+async function planAheadLocked(env: Env, now: number, force = false, preset: Preset[] = []): Promise<void> {
   const tailRow = await env.DB.prepare('select ends_at from program order by starts_at desc limit 1').first<{ ends_at: string }>()
   const tail = tailRow ? Date.parse(tailRow.ends_at) : 0
   if (!force && tail > now + REPLAN_LEFT_MS) return
@@ -338,21 +384,25 @@ export async function listUpcoming(env: Env, now: number, limit = 200): Promise<
  * or switched off drop out on the way.
  */
 async function rebuild(env: Env, now: number, edit: (list: UpcomingItem[]) => Preset[] = (list) => list): Promise<void> {
-  const upcoming = await listUpcoming(env, now)
-  const presets = edit(upcoming).filter((p) => p.kind !== 'timer')
-  await env.DB.prepare('delete from program where starts_at > ?').bind(new Date(now).toISOString()).run()
-  await planAhead(env, now, true, presets)
+  await withPlanLock(env, 8000, async () => {
+    const upcoming = await listUpcoming(env, now)
+    const presets = edit(upcoming).filter((p) => p.kind !== 'timer')
+    await env.DB.prepare('delete from program where starts_at > ?').bind(new Date(now).toISOString()).run()
+    await planAheadLocked(env, now, true, presets)
+  })
 }
 
 /** Ends the current track now (admin "next track" without the VPS). */
 export async function skipCurrent(env: Env, now: number): Promise<void> {
   const iso = new Date(now).toISOString()
-  const upcoming = await listUpcoming(env, now)
-  await env.DB.batch([
-    env.DB.prepare('delete from program where starts_at > ?').bind(iso),
-    env.DB.prepare('update program set ends_at = ? where starts_at <= ? and ends_at > ?').bind(iso, iso, iso),
-  ])
-  await planAhead(env, now, true, upcoming.filter((p) => p.kind !== 'timer'))
+  await withPlanLock(env, 8000, async () => {
+    const upcoming = await listUpcoming(env, now)
+    await env.DB.batch([
+      env.DB.prepare('delete from program where starts_at > ?').bind(iso),
+      env.DB.prepare('update program set ends_at = ? where starts_at <= ? and ends_at > ?').bind(iso, iso, iso),
+    ])
+    await planAheadLocked(env, now, true, upcoming.filter((p) => p.kind !== 'timer'))
+  })
 }
 
 /** Puts a track at place `position` (1 = right after the current one) in what plays next. */
