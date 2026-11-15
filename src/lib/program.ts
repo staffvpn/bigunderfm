@@ -67,9 +67,11 @@ export function tuneIn(program: Program): TuneIn | null {
 }
 
 // A phone that plays track after track drifts a little behind the timeline
-// (every track takes a moment to load). Up to this much is left alone - the
-// next track simply starts from its beginning; past it, playback jumps to
-// where the air really is.
+// (every track takes a moment to load, the phone slows down in the
+// background). That is fine: between tracks it never jumps into the middle
+// of one. The next track always starts from its beginning; only a phone so
+// far behind that its next track is already over on air skips ahead, and
+// then also to the start of the track on air.
 const MAX_LAG_SECONDS = 20
 
 /** What to play once item `finishedId` ended on this phone. */
@@ -77,10 +79,7 @@ export function afterItem(program: Program, finishedId: number | null): TuneIn |
   const now = stationNow(program)
   const i = program.items.findIndex((it) => it.id === finishedId)
   const next = i >= 0 ? program.items[i + 1] : undefined
-  if (next) {
-    const lag = (now - Date.parse(next.startsAt)) / 1000
-    if (lag <= MAX_LAG_SECONDS && now < Date.parse(next.endsAt)) return { item: next, offsetSeconds: 0 }
-  }
+  if (next && now < Date.parse(next.endsAt)) return { item: next, offsetSeconds: 0 }
   const live = tuneIn(program)
   if (!live) return null
   // Never restart the track that just finished because the clock says it has a few seconds left.
@@ -88,16 +87,21 @@ export function afterItem(program: Program, finishedId: number | null): TuneIn |
     const following = program.items[program.items.indexOf(live.item) + 1]
     return following ? { item: following, offsetSeconds: 0 } : null
   }
-  return live
+  return { item: live.item, offsetSeconds: 0 }
 }
 
-/** True when this phone is still on a track the station left a while ago (e.g. an admin skipped it). */
+/**
+ * True when the track this phone plays was cut on air (an admin skipped it,
+ * or it was deleted): the phone should leave it now. A phone that is merely
+ * a little behind is not "left behind": it finishes the track and goes on.
+ */
 export function isLeftBehind(program: Program, playingId: number | null): boolean {
   if (playingId === null) return false
   const playing = program.items.find((it) => it.id === playingId)
   if (playing) {
-    // Still in the plan, but cut short (an admin skipped it): the plan already moved on.
-    return stationNow(program) - Date.parse(playing.endsAt) > 8000
+    const planned = (Date.parse(playing.endsAt) - Date.parse(playing.startsAt)) / 1000
+    const cut = planned < (playing.track.durationSeconds || Infinity) - 3
+    return cut && stationNow(program) - Date.parse(playing.endsAt) > 3000
   }
   const live = tuneIn(program)
   if (!live) return false

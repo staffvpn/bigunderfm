@@ -48,11 +48,31 @@ describe('program timeline', () => {
     expect(t?.item.id).toBe(2)
   })
 
-  it('jumps to where the air is when far behind', () => {
+  it('starts the next track from the top even when well behind', () => {
+    vi.setSystemTime(T0 + 300_000)
+    const t = afterItem(program([item(1, 0, 180), item(2, 180, 200), item(3, 380, 200)]), 1)
+    expect(t).toMatchObject({ offsetSeconds: 0 })
+    expect(t?.item.id).toBe(2)
+  })
+
+  it('skips to the start of the track on air when the next one is already over', () => {
     vi.setSystemTime(T0 + 440_000)
     const t = afterItem(program([item(1, 0, 180), item(2, 180, 200), item(3, 380, 200)]), 1)
     expect(t?.item.id).toBe(3)
-    expect(t?.offsetSeconds).toBeCloseTo(60)
+    expect(t?.offsetSeconds).toBe(0)
+  })
+
+  it('lets a phone that is only behind finish its track', () => {
+    const p = program([item(1, 0, 180), item(2, 180, 200)])
+    vi.setSystemTime(T0 + 200_000)
+    expect(isLeftBehind(p, 1)).toBe(false)
+  })
+
+  it('leaves a track that was cut on air', () => {
+    const cut = { ...item(1, 0, 60), track: { ...item(1, 0, 60).track, durationSeconds: 180 } }
+    const p = program([cut, item(2, 60, 200)])
+    vi.setSystemTime(T0 + 70_000)
+    expect(isLeftBehind(p, 1)).toBe(true)
   })
 
   it('does not replay a track that ended a little early', () => {
