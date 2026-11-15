@@ -340,140 +340,84 @@
   }
 }
 
-/* ---------- greeting ---------- */
+/* ---------- greeting: BIG / UNDER / FM, then blue ---------- */
 .bfm-splash {
   --blue: #1f2bff;
   position: fixed;
   inset: 0;
   z-index: 50;
   display: flex;
-  flex-direction: column;
-  background: #ffffff;
-  color: #0a0a0a;
-  font-family: 'Inter Tight', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  text-transform: uppercase;
-  -webkit-font-smoothing: antialiased;
-}
-.bfm-splash__head {
-  display: flex;
-  flex-direction: column;
   background: #0a0a0a;
   color: #ffffff;
-  padding: 12px 10px 8px;
-  font-size: clamp(17px, 6vw, 26px);
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.03em;
-  white-space: pre;
-  animation: bfm-drop 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  font-family: 'Inter Tight', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  text-transform: uppercase;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
-.bfm-splash__sub {
-  animation: bfm-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.75s both;
-}
-@keyframes bfm-drop {
-  from {
-    transform: translateY(-100%);
-  }
-}
-.bfm-splash__body {
+.bfm-splash__word {
   flex: 1;
   display: flex;
-  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  gap: 28px;
-  padding: 0 10px;
-  transition: opacity 0.45s ease, transform 0.6s cubic-bezier(0.7, 0, 0.2, 1);
+  overflow: hidden;
 }
-.bfm-splash.is-leaving {
-  background: transparent;
-  pointer-events: none;
-  transition: background 0.4s ease 0.15s;
-}
-.bfm-splash.is-leaving .bfm-splash__body {
-  opacity: 0;
-  transform: translateY(24px);
-}
-.bfm-splash.is-leaving .bfm-splash__head {
-  opacity: 0;
-  transition: opacity 0.2s linear 0.4s;
-}
-.bfm-splash__freq {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  font-size: clamp(72px, 26vw, 120px);
+.bfm-splash__w {
+  display: block;
   font-weight: 800;
-  line-height: 0.9;
-  letter-spacing: -0.05em;
-  font-variant-numeric: tabular-nums;
-  animation: bfm-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+  line-height: 0.8;
+  letter-spacing: -0.06em;
+  /* Each word slams in a touch too big and settles. */
+  animation: bfm-slam 0.3s cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
-.bfm-splash__freq small {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0;
+.bfm-splash__w--big {
+  font-size: 46vw;
 }
-.bfm-splash__dial {
-  position: relative;
-  padding-top: 4px;
-  animation: bfm-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+.bfm-splash__w--under {
+  font-size: 26vw;
 }
-.bfm-splash__ticks {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  height: 26px;
-  border-bottom: 1px solid #0a0a0a;
+.bfm-splash__w--fm {
+  font-size: 62vw;
 }
-.bfm-splash__ticks i {
-  width: 1px;
-  height: 9px;
-  background: #0a0a0a;
+@keyframes bfm-slam {
+  from {
+    transform: scale(1.18);
+    opacity: 0.2;
+  }
 }
-.bfm-splash__ticks i.is-major {
-  height: 20px;
+/* The blue frame. */
+.bfm-splash.is-blue {
+  background: var(--blue);
 }
-.bfm-splash__scale {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 8px;
-  font-size: 11px;
-  color: #5a5a5a;
-}
-.bfm-splash__needle {
+.bfm-splash__air {
   position: absolute;
-  top: -6px;
-  left: 0;
-  width: 3px;
-  height: 40px;
-  background: #1f2bff;
-  /* Runs across, overshoots, settles on the station. */
-  margin-left: -1px;
-}
-@keyframes bfm-tune-needle {
-  0% {
-    left: 0;
-  }
-  55% {
-    left: 82%;
-  }
-  75% {
-    left: 66%;
-  }
-  88% {
-    left: 71%;
-  }
-  100% {
-    left: 69.5%;
-  }
-}
-.bfm-splash__onair {
+  left: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
   display: flex;
   align-items: center;
-  font-size: 12px;
-  animation: bfm-rise 0.4s cubic-bezier(0.16, 1, 0.3, 1) 1.75s both;
+  font-size: 18px;
+  font-weight: 700;
+  animation: bfm-rise 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.bfm-splash.is-blue .bfm__live {
+  background: #ffffff;
+  width: 10px;
+  height: 10px;
+}
+/* Fold down: the blue shrinks from the top until only a strip the height of
+   the "Слушать" button is left, then fades on top of it. */
+.bfm-splash.is-leaving {
+  clip-path: inset(68% 0 calc(100% - 68% - 84px) 0);
+  opacity: 0;
+  transition:
+    clip-path 0.45s cubic-bezier(0.7, 0, 0.2, 1),
+    opacity 0.15s linear 0.4s;
+}
+.bfm-splash.is-leaving .bfm-splash__air {
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.bfm-splash:not(.is-leaving) {
+  clip-path: inset(0 0 0 0);
 }
 @media (prefers-reduced-motion: reduce) {
   .bfm-splash *,
