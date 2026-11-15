@@ -13,4 +13,5 @@ create index demos_user on demos(tg_user_id, created_at);
 
 insert or ignore into folders (id, name, kind, position) values ('show-demo', 'DEMO HOUR', 'show', 20);
 insert or ignore into schedule_slots (id, folder_id, title, days, start_minute, end_minute, priority)
-  values ('slot-demo', 'show-demo', 'DEMO HOUR', '1234567', 60, 120, 10);
+  values ('slot-demo', 'show-demo', 'DEMO HOUR', '1234567', 1140, 1200, 10);
+delete from schedule_slots where id = 'slot-no-sleep';
