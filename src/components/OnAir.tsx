@@ -1,10 +1,4 @@
-/** "On air" mark: three bars moving like a level meter. Pure CSS (no audio analysis). */
+/** "On air" mark: the small blue square that blinks. */
 export function OnAir() {
-  return (
-    <span className="bfm-eq" aria-hidden="true">
-      <i />
-      <i />
-      <i />
-    </span>
-  )
+  return <span className="bfm__live" aria-hidden="true" />
 }
