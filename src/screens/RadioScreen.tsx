@@ -7,6 +7,7 @@ import { LikeButton } from '../components/LikeButton'
 import { FitTitle } from '../components/FitTitle'
 import { ScrambleTitle } from '../components/ScrambleTitle'
 import { OnAir } from '../components/OnAir'
+import { ShowCountdown } from '../components/ShowCountdown'
 import { PauseIcon, PlayIcon } from '../components/Icons'
 import { Socials } from '../components/Socials'
 import { fetchPlaylist, fetchUpNextFilePath, toPlaylistTracks, type PlaylistEntry } from '../lib/tracks'
@@ -867,10 +868,16 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
           Сетка →
         </button>
       </div>
-      <div className="bfm__next">
-        <span className="bfm__next-tag">Дальше</span>
-        <span className="bfm__next-name">{nextTrack ? `${nextTrack.artist} · ${nextTrack.title}` : ''}</span>
-      </div>
+      {(() => {
+        const nextRow = (
+        <div className="bfm__next">
+          <span className="bfm__next-tag">Дальше</span>
+          <span className="bfm__next-name">{nextTrack ? `${nextTrack.artist} · ${nextTrack.title}` : ''}</span>
+        </div>
+        )
+        const show = program?.nextSlot?.show ? program.nextSlot : null
+        return show ? <ShowCountdown title={show.title} startsAt={show.startsAt} clockOffsetMs={program?.clockOffsetMs ?? 0} fallback={nextRow} /> : nextRow
+      })()}
       {connectError && <div className="bfm__error">Не удалось подключиться. Нажмите «Слушать» ещё раз.</div>}
       <Socials />
       <div hidden>

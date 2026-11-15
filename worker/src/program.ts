@@ -468,7 +468,7 @@ export interface ProgramView {
   /** Cloudflare tunnel address of the broadcast server, for listeners who cannot reach it directly. */
   tunnel: string | null
   slot: { title: string; label: string; endsAt: string | null } | null
-  nextSlot: { title: string; startsAt: string } | null
+  nextSlot: { title: string; startsAt: string; show?: boolean } | null
   items: ProgramItem[]
 }
 
@@ -557,7 +557,7 @@ export async function programView(env: Env, now: number): Promise<ProgramView> {
     vpsUp: vps,
     tunnel: null,
     slot: slot ? { title: slot.title, label: airLabel(slot, parseAirNames(tunnelRow?.value), now), endsAt: change ? new Date(change.at).toISOString() : null } : null,
-    nextSlot: change?.slot ? { title: change.slot.title, startsAt: new Date(change.at).toISOString() } : null,
+    nextSlot: change?.slot ? { title: change.slot.title, startsAt: new Date(change.at).toISOString(), show: change.slot.folderId.startsWith('show-') } : null,
     items: items.map((r) => ({
       id: r.id,
       startsAt: r.starts_at,
