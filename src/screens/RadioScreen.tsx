@@ -256,7 +256,11 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       if (!audio) return
       const id = fallbackItemIdRef.current
       const item = id !== null ? programRef.current?.items.find((it) => it.id === id) : undefined
-      if (!fallbackRef.current || isPausedRef.current || !item || item.kind === 'jingle' || !Number.isFinite(audio.duration)) {
+      // In the background the phone slows timers down: a fade could stall
+      // half-way (music left near silent) and an early switch could miss.
+      // There the file simply plays to its end and 'ended' moves on.
+      const hidden = document.visibilityState !== 'visible'
+      if (hidden || !fallbackRef.current || isPausedRef.current || !item || item.kind === 'jingle' || !Number.isFinite(audio.duration)) {
         if (audio.volume !== 1) audio.volume = 1
         return
       }
@@ -351,7 +355,7 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       if (!p || !fallbackRef.current) return
       if (isPausedRef.current) {
         showProgramPreview(p)
-      } else if (!connectingRef.current && isLeftBehind(p, fallbackItemIdRef.current)) {
+      } else if (!connectingRef.current && document.visibilityState === 'visible' && isLeftBehind(p, fallbackItemIdRef.current)) {
         // The station moved on without us (an admin skipped the track).
         tuneInFallback()
       }
@@ -431,6 +435,13 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       if (document.visibilityState === 'visible') {
         pollNowPlaying()
         pollProgram()
+        // Meant to be playing but the phone stopped us in the background:
+        // pick the air up again at once.
+        const audio = audioRef.current
+        if (audio && fallbackRef.current && !isPausedRef.current && !connectingRef.current && (audio.paused || audio.ended)) {
+          audio.volume = 1
+          tuneInFallback()
+        }
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -549,7 +560,7 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
         handleAudioError()
         return
       }
-      if (isPausedRef.current) return
+      if (isPausedRef.current || cuttingRef.current) return
       // Between tracks is the one moment switching back is seamless. The
       // backend checks the radio server every minute; only when it says the
       // server is back (or we have no word from it) is it worth the wait.
