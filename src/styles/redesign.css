@@ -340,84 +340,31 @@
   }
 }
 
-/* ---------- greeting: BIG / UNDER / FM, then blue ---------- */
+/* ---------- greeting: BIG / UNDER / FM stretched over the whole screen ---------- */
 .bfm-splash {
-  --blue: #1f2bff;
   position: fixed;
   inset: 0;
   z-index: 50;
-  display: flex;
-  background: #0a0a0a;
-  color: #ffffff;
-  font-family: 'Inter Tight', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  text-transform: uppercase;
-  -webkit-font-smoothing: antialiased;
-  overflow: hidden;
+  background: #1f2bff;
+  clip-path: inset(0 0 0 0);
 }
-.bfm-splash__word {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-.bfm-splash__w {
+.bfm-splash__canvas {
   display: block;
-  font-weight: 800;
-  line-height: 0.8;
-  letter-spacing: -0.06em;
-  /* Each word slams in a touch too big and settles. */
-  animation: bfm-slam 0.3s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+  width: 100%;
+  height: 100%;
 }
-.bfm-splash__w--big {
-  font-size: 46vw;
-}
-.bfm-splash__w--under {
-  font-size: 26vw;
-}
-.bfm-splash__w--fm {
-  font-size: 62vw;
-}
-@keyframes bfm-slam {
-  from {
-    transform: scale(1.18);
-    opacity: 0.2;
-  }
-}
-/* The blue frame. */
-.bfm-splash.is-blue {
-  background: var(--blue);
-}
-.bfm-splash__air {
-  position: absolute;
-  left: 18px;
-  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
-  display: flex;
-  align-items: center;
-  font-size: 18px;
-  font-weight: 700;
-  animation: bfm-rise 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-.bfm-splash.is-blue .bfm__live {
-  background: #ffffff;
-  width: 10px;
-  height: 10px;
-}
-/* Fold down: the blue shrinks from the top until only a strip the height of
-   the "Слушать" button is left, then fades on top of it. */
+/* Fold down into the "Слушать" button (the exact inset is set from its position). */
 .bfm-splash.is-leaving {
-  clip-path: inset(68% 0 calc(100% - 68% - 84px) 0);
+  clip-path: inset(68% 0 20% 0);
   opacity: 0;
+  pointer-events: none;
   transition:
     clip-path 0.45s cubic-bezier(0.7, 0, 0.2, 1),
     opacity 0.15s linear 0.4s;
 }
-.bfm-splash.is-leaving .bfm-splash__air {
+.bfm-splash.is-leaving .bfm-splash__canvas {
   opacity: 0;
-  transition: opacity 0.1s;
-}
-.bfm-splash:not(.is-leaving) {
-  clip-path: inset(0 0 0 0);
+  transition: opacity 0.2s linear;
 }
 @media (prefers-reduced-motion: reduce) {
   .bfm-splash *,
