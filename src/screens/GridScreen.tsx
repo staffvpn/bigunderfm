@@ -5,6 +5,7 @@ import { currentBackgroundImage } from '../lib/backgrounds'
 import { subscribeProgramChanged } from '../lib/presence'
 import { HeartIcon } from '../components/Icons'
 import { Socials } from '../components/Socials'
+import { OnAir } from '../components/OnAir'
 
 // The air as a table: what just played (a like can still be given), what is
 // on, what is next, and when the shows air. One request per visit, then one
@@ -73,7 +74,9 @@ export function GridScreen() {
     }
   }, [])
 
+  const [stamped, setStamped] = useState<string | null>(null)
   function like(trackId: string) {
+    setStamped(trackId)
     setGrid((g) => {
       if (!g) return g
       const bump = <T extends { trackId: string | null; likes: number; liked: boolean }>(t: T): T =>
@@ -88,11 +91,11 @@ export function GridScreen() {
     t.trackId ? (
       <button
         type="button"
-        className={`bfm-grid__like${t.liked ? ' is-liked' : ''}`}
+        className={`bfm-grid__like${t.liked ? ' is-liked' : ''}${stamped === t.trackId ? ' is-stamped' : ''}`}
         onClick={() => !t.liked && like(t.trackId!)}
         aria-label={t.liked ? 'Лайк уже стоит' : 'Поставить лайк'}
       >
-        <span>{t.likes > 0 ? t.likes : ''}</span>
+        <span key={t.likes} className="bfm-roll">{t.likes > 0 ? t.likes : ''}</span>
         <HeartIcon filled={t.liked} size={16} />
       </button>
     ) : (
@@ -147,7 +150,7 @@ export function GridScreen() {
             <div className="bfm-grid__photo" style={photo ? { backgroundImage: `url(${photo})` } : undefined} />
             <div className="bfm-grid__card">
               <span className="bfm__label">
-                <span className="bfm__live" aria-hidden="true" />В эфире
+                <OnAir />В эфире
               </span>
               <span className="bfm-grid__card-artist">{current.artist}</span>
               <span className="bfm-grid__card-title">{current.title}</span>

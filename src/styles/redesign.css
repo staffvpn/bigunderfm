@@ -695,3 +695,131 @@
   height: 36px;
   padding: 0 12px;
 }
+
+/* ---------- on-air meter: three bars, CSS only, still while paused ---------- */
+.bfm-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: 12px;
+  height: 10px;
+  margin-right: 7px;
+  vertical-align: -1px;
+}
+.bfm-eq i {
+  flex: 1;
+  height: 100%;
+  background: var(--blue, #1f2bff);
+  transform-origin: bottom;
+  transform: scaleY(0.35);
+}
+.bfm-grid__card .bfm-eq i {
+  background: #ffffff;
+}
+.bfm-playing .bfm-eq i {
+  animation: bfm-eq 0.9s ease-in-out infinite alternate;
+}
+.bfm-playing .bfm-eq i:nth-child(2) {
+  animation-duration: 0.62s;
+  animation-delay: -0.3s;
+}
+.bfm-playing .bfm-eq i:nth-child(3) {
+  animation-duration: 0.78s;
+  animation-delay: -0.5s;
+}
+@keyframes bfm-eq {
+  0% {
+    transform: scaleY(0.25);
+  }
+  45% {
+    transform: scaleY(1);
+  }
+  70% {
+    transform: scaleY(0.55);
+  }
+  100% {
+    transform: scaleY(0.85);
+  }
+}
+
+/* ---------- track change: a blue line runs under the name, the title rises in ---------- */
+.bfm__now {
+  position: relative;
+}
+.bfm__title--in {
+  animation: bfm-rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both;
+}
+.bfm__now .bfm__artist {
+  position: relative;
+}
+
+/* ---------- like: a stamp, and the count rolls up ---------- */
+.bfm__like.is-liked {
+  color: var(--blue, #1f2bff);
+}
+.bfm__like.is-liked span {
+  color: var(--ink, #0a0a0a);
+}
+.is-stamped svg {
+  animation: bfm-stamp 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+}
+@keyframes bfm-stamp {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.7) rotate(-8deg);
+  }
+  60% {
+    transform: scale(0.85) rotate(3deg);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.bfm-roll {
+  display: inline-block;
+  animation: bfm-roll 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes bfm-roll {
+  from {
+    transform: translateY(70%);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bfm-eq i,
+  .is-stamped svg,
+  .bfm-roll,
+  .bfm__title--in {
+    animation: none !important;
+  }
+}
+
+.bfm__artist.is-changing::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.02em;
+  height: 0.09em;
+  background: var(--blue, #1f2bff);
+  transform-origin: left;
+  animation: bfm-sweep 0.9s cubic-bezier(0.7, 0, 0.2, 1) both;
+}
+@keyframes bfm-sweep {
+  0% {
+    transform: scaleX(0);
+  }
+  50% {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+  50.1% {
+    transform-origin: right;
+  }
+  100% {
+    transform: scaleX(0);
+    transform-origin: right;
+  }
+}

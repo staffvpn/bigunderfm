@@ -5,6 +5,8 @@ import { computeCurrentPosition } from '../lib/radioClock'
 import { pickNextBackground, type BackgroundItem } from '../lib/backgrounds'
 import { LikeButton } from '../components/LikeButton'
 import { FitTitle } from '../components/FitTitle'
+import { ScrambleTitle } from '../components/ScrambleTitle'
+import { OnAir } from '../components/OnAir'
 import { PauseIcon, PlayIcon } from '../components/Icons'
 import { Socials } from '../components/Socials'
 import { fetchPlaylist, fetchUpNextFilePath, toPlaylistTracks, type PlaylistEntry } from '../lib/tracks'
@@ -713,6 +715,10 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    document.documentElement.classList.toggle('bfm-playing', userStarted && !isPaused)
+  }, [userStarted, isPaused])
+
   // Android app (android/): the phone's own player in the notification shade,
   // on the lock screen and in the car shows what is on air and drives play/pause.
   useEffect(() => {
@@ -843,13 +849,13 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       </div>
       <div className="bfm__now">
         <span className="bfm__label">
-          <span className="bfm__live" aria-hidden="true" />
+          <OnAir />
           В эфире{airName ? ` · ${airName}` : ''}
           {isNewTrack ? ' · Новинка' : ''}
         </span>
         {/* One line each, shrunk to fit: the photo keeps its height whatever the names. */}
-        <FitTitle className="bfm__artist" text={nowPlaying?.artist || '—'} min={18} />
-        <FitTitle className="bfm__title" text={showConnecting ? 'Подключение...' : (nowPlaying?.title ?? 'Загрузка...')} min={12} />
+        <ScrambleTitle className="bfm__artist" text={nowPlaying?.artist || '—'} min={18} />
+        <FitTitle key={nowPlaying?.title ?? ''} className="bfm__title bfm__title--in" text={showConnecting ? 'Подключение...' : (nowPlaying?.title ?? 'Загрузка...')} min={12} />
       </div>
       <button type="button" className="bfm__play" onClick={handlePlayClick} disabled={userStarted && !isPaused && isBuffering}>
         <span>{userStarted && !isPaused ? 'Пауза' : 'Слушать'}</span>
