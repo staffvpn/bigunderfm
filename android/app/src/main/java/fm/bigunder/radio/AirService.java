@@ -9,9 +9,6 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.media.AudioAttributes;
-import android.media.AudioFocusRequest;
-import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
@@ -27,6 +24,8 @@ import android.os.PowerManager;
  * shade, lock screen, Bluetooth and car head units show the track and drive
  * play/pause) on a foreground service that keeps the music going with the
  * screen off. The sound itself plays in the WebView; this mirrors it.
+ * Audio focus is left to the WebView: a second focus request from here
+ * would make the WebView lose focus and stop the music.
  */
 public class AirService extends Service {
     static final String ACTION_PLAY = "fm.bigunder.radio.PLAY";
@@ -116,32 +115,11 @@ public class AirService extends Service {
         if (playing) {
             if (!wake.isHeld()) wake.acquire();
             if (!wifi.isHeld()) wifi.acquire();
-            requestFocus();
         } else {
             if (wake.isHeld()) wake.release();
             if (wifi.isHeld()) wifi.release();
         }
         getSystemService(NotificationManager.class).notify(1, buildNotification());
-    }
-
-    private AudioFocusRequest focus;
-
-    /** Other players pause when the radio starts; a phone call pauses the radio. */
-    private void requestFocus() {
-        if (Build.VERSION.SDK_INT < 26 || focus != null) return;
-        focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build())
-                .setOnAudioFocusChangeListener(change -> {
-                    if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-                        MainActivity.remote("pause");
-                        if (change == AudioManager.AUDIOFOCUS_LOSS) focus = null;
-                    }
-                })
-                .build();
-        ((AudioManager) getSystemService(AUDIO_SERVICE)).requestAudioFocus(focus);
     }
 
     private Notification buildNotification() {
@@ -177,7 +155,6 @@ public class AirService extends Service {
         if (session != null) session.release();
         if (wake != null && wake.isHeld()) wake.release();
         if (wifi != null && wifi.isHeld()) wifi.release();
-        if (focus != null && Build.VERSION.SDK_INT >= 26) ((AudioManager) getSystemService(AUDIO_SERVICE)).abandonAudioFocusRequest(focus);
         super.onDestroy();
     }
 
