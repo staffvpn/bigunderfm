@@ -609,6 +609,10 @@ async function handleSetTrackFolders(req: Request, env: Env, trackId: string): P
     env.DB.prepare('delete from folder_tracks where track_id = ?').bind(trackId),
     ...ids.map((id) => env.DB.prepare('insert into folder_tracks (folder_id, track_id) values (?, ?)').bind(id, trackId)),
   ])
+  // The air is planned about an hour ahead: without this a track just moved
+  // into a show would still play where it was planned before the move.
+  await replanFuture(env, Date.now())
+  await dropProgramCache(env)
   return json({ ok: true, folderIds: ids })
 }
 
