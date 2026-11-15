@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import '@fontsource/archivo-black/latin-400.css'
 
-// The greeting: BIG, UNDER, RADIO typed letter by letter, the text always
+// The greeting: BIGUNDER, then RADIO, typed letter by letter, the text always
 // stretched to fill the whole screen edge to edge, white on the station blue.
 // Then the blue folds down into the "Слушать" button.
-const FRAMES = ['B', 'BI', 'BIG', 'U', 'UN', 'UND', 'UNDE', 'UNDER', 'R', 'RA', 'RAD', 'RADI', 'RADIO']
+const FRAMES = ['B', 'BI', 'BIG', 'BIGU', 'BIGUN', 'BIGUND', 'BIGUNDE', 'BIGUNDER', 'R', 'RA', 'RAD', 'RADI', 'RADIO']
 const FRAME_MS = 100
 const HOLD_MS = 350
 const MIN_SHOWN_MS = FRAMES.length * FRAME_MS + HOLD_MS
