@@ -47,7 +47,7 @@ function toSlot(r: SlotRow): RSlot {
 }
 
 async function loadLibrary(env: Env): Promise<Library> {
-  const [tracksRes, linksRes, foldersRes, slotsRes] = await env.DB.batch([
+  const [tracksRes, linksRes, foldersRes, slotsRes, demosRes] = await env.DB.batch([
     env.DB.prepare(
       `select t.id, t.title, t.artist, t.file_path, t.duration_seconds, t.kind, t.is_hit, t.created_at
        from playlist_items p join tracks t on t.id = p.track_id where t.is_enabled = 1`,
@@ -55,9 +55,19 @@ async function loadLibrary(env: Env): Promise<Library> {
     env.DB.prepare('select folder_id, track_id from folder_tracks'),
     env.DB.prepare('select id, name, kind from folders'),
     env.DB.prepare('select id, folder_id, title, days, start_minute, end_minute, priority from schedule_slots'),
+    env.DB.prepare("select track_id from demos where status = 'demo'"),
   ])
   const byTrack = new Map<string, string[]>()
+  // An accepted demo that nobody filed elsewhere plays only in DEMO HOUR,
+  // never as an ordinary new upload in the day's rotation.
+  for (const d of (demosRes.results as { track_id: string }[])) byTrack.set(d.track_id, ['show-demo'])
+  const filed = new Set<string>()
   for (const l of linksRes.results as { folder_id: string; track_id: string }[]) {
+    // Folders someone chose replace the DEMO HOUR default.
+    if (!filed.has(l.track_id)) {
+      filed.add(l.track_id)
+      byTrack.delete(l.track_id)
+    }
     const list = byTrack.get(l.track_id) ?? []
     list.push(l.folder_id)
     byTrack.set(l.track_id, list)
