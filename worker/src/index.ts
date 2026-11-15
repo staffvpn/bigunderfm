@@ -1,5 +1,5 @@
 import type { Env } from './env'
-import { handleBotUpdate, callTelegram, promoteDemoIfLiked } from './bot'
+import { handleBotUpdate, callTelegram, promoteDemoIfLiked, nextPlaylistPosition } from './bot'
 import { signJwt, verifyJwt, type Claims } from './jwt'
 import { verifyInitData } from './telegramAuth'
 import { CORS_HEADERS, audioContentType, buildMediaKey, buildTrackKey, imageContentType, json, nowIso, safeEqual, sleep } from './util'
@@ -247,18 +247,77 @@ async function handleUpdateTrack(req: Request, env: Env, id: string): Promise<Re
   return json({ ok: true })
 }
 
+const TRASH_DAYS = 14
+
+/** Delete = into the trash: the track leaves the library and the air, its audio stays for TRASH_DAYS. */
 async function handleDelete(env: Env, id: string): Promise<Response> {
-  const track = await env.DB.prepare('select file_path, cover_path from tracks where id = ?')
-    .bind(id)
-    .first<{ file_path: string; cover_path: string | null }>()
-  if (!track) return json({ error: 'not found' }, 404)
-  // playlist_items and folder_tracks rows go with it (ON DELETE CASCADE).
-  await env.DB.prepare('delete from tracks where id = ?').bind(id).run()
+  const row = await env.DB.prepare('select * from tracks where id = ?').bind(id).first<Record<string, unknown>>()
+  if (!row) return json({ error: 'not found' }, 404)
+  const [folders, position] = await Promise.all([
+    env.DB.prepare('select folder_id from folder_tracks where track_id = ?').bind(id).all<{ folder_id: string }>(),
+    env.DB.prepare('select position from playlist_items where track_id = ?').bind(id).first<{ position: number }>(),
+  ])
+  await env.DB.batch([
+    env.DB.prepare('insert or replace into track_trash (id, row_json, folders_json, position, deleted_at) values (?, ?, ?, ?, ?)').bind(
+      id,
+      JSON.stringify(row),
+      JSON.stringify(folders.results.map((f) => f.folder_id)),
+      position?.position ?? null,
+      nowIso(),
+    ),
+    // playlist_items and folder_tracks rows go with it (ON DELETE CASCADE).
+    env.DB.prepare('delete from tracks where id = ?').bind(id),
+  ])
   await replanFuture(env, Date.now())
   await dropProgramCache(env)
-  const keys = [track.file_path, ...(track.cover_path ? [track.cover_path] : [])]
-  await env.MEDIA.delete(keys)
   return json({ ok: true })
+}
+
+async function handleListTrash(env: Env): Promise<Response> {
+  const { results } = await env.DB.prepare('select id, row_json, deleted_at from track_trash order by deleted_at desc').all<{
+    id: string
+    row_json: string
+    deleted_at: string
+  }>()
+  return json({
+    items: results.map((r) => {
+      const row = JSON.parse(r.row_json) as { title?: string; artist?: string }
+      return { id: r.id, title: row.title ?? '', artist: row.artist ?? '', deletedAt: r.deleted_at }
+    }),
+  })
+}
+
+async function handleRestoreTrack(env: Env, id: string): Promise<Response> {
+  const t = await env.DB.prepare('select row_json, folders_json, position from track_trash where id = ?')
+    .bind(id)
+    .first<{ row_json: string; folders_json: string; position: number | null }>()
+  if (!t) return json({ error: 'Трек уже удалён окончательно' }, 404)
+  const row = JSON.parse(t.row_json) as Record<string, unknown>
+  const cols = Object.keys(row).filter((c) => /^[a-z_]+$/.test(c))
+  const known = new Set((await env.DB.prepare('select id from folders').all<{ id: string }>()).results.map((r) => r.id))
+  const folders = (JSON.parse(t.folders_json) as string[]).filter((f) => known.has(f))
+  const position = t.position ?? (await nextPlaylistPosition(env))
+  await env.DB.batch([
+    env.DB.prepare(`insert into tracks (${cols.join(', ')}) values (${cols.map(() => '?').join(', ')})`).bind(...cols.map((c) => row[c] as never)),
+    env.DB.prepare('insert into playlist_items (id, track_id, position) values (?, ?, ?)').bind(crypto.randomUUID(), id, position),
+    ...folders.map((f) => env.DB.prepare('insert or ignore into folder_tracks (folder_id, track_id) values (?, ?)').bind(f, id)),
+    env.DB.prepare('delete from track_trash where id = ?').bind(id),
+  ])
+  await replanFuture(env, Date.now())
+  await dropProgramCache(env)
+  return json({ ok: true })
+}
+
+/** Once in a while: audio of tracks deleted more than TRASH_DAYS ago goes for good. */
+async function purgeTrash(env: Env): Promise<void> {
+  const before = new Date(Date.now() - TRASH_DAYS * 86_400_000).toISOString()
+  const { results } = await env.DB.prepare('select id, row_json from track_trash where deleted_at < ? limit 50').bind(before).all<{ id: string; row_json: string }>()
+  for (const r of results) {
+    const row = JSON.parse(r.row_json) as { file_path?: string; cover_path?: string | null }
+    const keys = [row.file_path, row.cover_path].filter((k): k is string => !!k)
+    if (keys.length) await env.MEDIA.delete(keys)
+    await env.DB.prepare('delete from track_trash where id = ?').bind(r.id).run()
+  }
 }
 
 async function handleOrder(req: Request, env: Env): Promise<Response> {
@@ -1036,6 +1095,9 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     const auth = await requireAdmin(req, env)
     if (auth instanceof Response) return auth
 
+    if (m === 'GET' && path === '/api/admin/trash') return handleListTrash(env)
+    const restore = path.match(/^\/api\/admin\/trash\/([0-9a-f-]{36})\/restore$/)
+    if (restore && m === 'POST') return handleRestoreTrack(env, restore[1])
     if (m === 'GET' && path === '/api/admin/library') return json({ entries: (await listPlaylist(env, true)).map(toEntry) })
     if (m === 'POST' && path === '/api/admin/tracks') return handleUpload(req, env)
     if (m === 'PUT' && path === '/api/admin/order') return handleOrder(req, env)
@@ -1273,5 +1335,6 @@ export default {
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(sampleListeners(env))
     ctx.waitUntil(sendDueReminders(env))
+    if (new Date().getUTCMinutes() === 7) ctx.waitUntil(purgeTrash(env))
   },
 }

@@ -1,3 +1,4 @@
+import { confirmAction } from '../lib/telegram'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { api } from '../lib/api'
 import { fetchPlaylist, fetchQueue, queueTrack, unqueueTrack, type PlaylistEntry, type QueueEntry } from '../lib/tracks'
@@ -255,13 +256,34 @@ export function AdminLibrary() {
   }
 
   async function handleDelete(trackId: string) {
-    // The backend removes the track, its playlist entry and its files.
+    const entry = entries.find((e) => e.track.id === trackId)
+    const name = entry ? `${entry.track.artist} — ${entry.track.title}` : 'этот трек'
+    if (!(await confirmAction(`Удалить ${name}? Его можно будет вернуть из корзины в течение 14 дней.`))) return
+    // Into the trash: off the air at once, audio kept for 14 days.
     try {
       await api(`/api/admin/tracks/${trackId}`, { method: 'DELETE' })
     } catch (err) {
       setResults([`ОШИБКА УДАЛЕНИЯ: ${(err as Error).message}`])
     }
     reload()
+    loadTrash()
+  }
+
+  const [trash, setTrash] = useState<{ id: string; title: string; artist: string; deletedAt: string }[]>([])
+  function loadTrash() {
+    api<{ items: typeof trash }>('/api/admin/trash')
+      .then((d) => setTrash(d.items))
+      .catch(() => {})
+  }
+  useEffect(loadTrash, [])
+  async function handleRestore(id: string) {
+    try {
+      await api(`/api/admin/trash/${id}/restore`, { method: 'POST' })
+    } catch (err) {
+      setResults([`ОШИБКА: ${(err as Error).message}`])
+    }
+    reload()
+    loadTrash()
   }
 
   async function handleUnqueue(rid: number) {
@@ -744,6 +766,22 @@ export function AdminLibrary() {
           </li>
         ))}
       </ul>
+
+      {trash.length > 0 && (
+        <div className="admin-library__trash">
+          <span className="admin-library__queue-title">Корзина (хранится 14 дней)</span>
+          <ul>
+            {trash.map((t) => (
+              <li key={t.id} className="admin-library__row">
+                <span className="admin-library__label">
+                  {t.artist} — {t.title}
+                </span>
+                <button onClick={() => handleRestore(t.id)}>Вернуть</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }

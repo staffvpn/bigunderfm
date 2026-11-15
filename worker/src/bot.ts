@@ -151,7 +151,7 @@ export async function buildStatusText(env: Env): Promise<string> {
   return lines.join('\n')
 }
 
-async function nextPlaylistPosition(env: Env): Promise<number> {
+export async function nextPlaylistPosition(env: Env): Promise<number> {
   const row = await env.DB.prepare('select coalesce(max(position), 0) as m from playlist_items').first<{ m: number }>()
   return (row?.m ?? 0) + 1
 }

@@ -6,6 +6,7 @@ interface TelegramWebApp {
   setHeaderColor?: (color: string) => void
   setBackgroundColor?: (color: string) => void
   colorScheme: 'light' | 'dark'
+  showConfirm?: (message: string, callback: (ok: boolean) => void) => void
 }
 
 declare global {
@@ -53,4 +54,19 @@ export function getTelegramUserId(): number | null {
 export function getTelegramDisplayName(): string {
   const user = getTelegramWebApp()?.initDataUnsafe?.user as { first_name?: string; username?: string } | undefined
   return user?.first_name || (user?.username ? `@${user.username}` : '')
+}
+
+/** Yes/no question: Telegram's own dialog inside Telegram, the browser's elsewhere. */
+export function confirmAction(message: string): Promise<boolean> {
+  const webApp = getTelegramWebApp()
+  if (webApp?.showConfirm && webApp.initData) {
+    return new Promise((resolve) => {
+      try {
+        webApp.showConfirm!(message, (ok) => resolve(ok))
+      } catch {
+        resolve(window.confirm(message))
+      }
+    })
+  }
+  return Promise.resolve(window.confirm(message))
 }
