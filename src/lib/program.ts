@@ -1,4 +1,5 @@
 import { api } from './api'
+import { applyAccent } from './accent'
 
 // The station's planned air (see worker/src/program.ts): the current and next
 // few tracks with their exact times, plus which part of the grid is on. While
@@ -28,6 +29,7 @@ export interface ProgramView {
   tunnel?: string | null
   slot: { title: string; label?: string; endsAt: string | null } | null
   nextSlot: { title: string; startsAt: string; show?: boolean } | null
+  accent?: string | null
   items: ProgramItem[]
 }
 
@@ -41,6 +43,7 @@ export async function fetchProgram(): Promise<Program | null> {
     const sent = Date.now()
     const view = await api<ProgramView>('/api/program')
     if (!Array.isArray(view?.items)) return null
+    if (view.accent !== undefined) applyAccent(view.accent)
     const received = Date.now()
     return { ...view, clockOffsetMs: Date.parse(view.now) - (sent + received) / 2 }
   } catch {

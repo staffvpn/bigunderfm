@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
+import { applyAccent } from '../lib/accent'
 
 // What listeners read on the main screen instead of the folder names
 // (morning / day / evening / night), and the shows: name, days, time.
@@ -19,6 +20,8 @@ const PARTS: [keyof Names, string][] = [
   ['evening', 'Вечер'],
   ['night', 'Ночь'],
 ]
+// Strong colours that keep white text readable on buttons.
+const SWATCHES = ['#1f2bff', '#e10600', '#0a0a0a', '#ff5a00', '#00873e', '#7a1fff']
 const DAYS = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС']
 const toTime = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 const toMinute = (t: string) => {
@@ -30,15 +33,28 @@ export function AdminAir() {
   const [names, setNames] = useState<Names | null>(null)
   const [shows, setShows] = useState<Show[]>([])
   const [note, setNote] = useState<Record<string, string>>({})
+  const [accent, setAccent] = useState('#1f2bff')
 
   useEffect(() => {
-    api<{ names: Names; shows: Show[] }>('/api/admin/air')
+    api<{ names: Names; shows: Show[]; accent: string }>('/api/admin/air')
       .then((data) => {
+        setAccent(data.accent)
         setNames(data.names)
         setShows(data.shows)
       })
       .catch(() => setNote({ names: 'Не удалось загрузить' }))
   }, [])
+
+  async function saveAccent(color: string) {
+    setAccent(color)
+    applyAccent(color)
+    try {
+      await api('/api/admin/accent', { method: 'PUT', body: { color } })
+      setNote((n) => ({ ...n, accent: 'Сохранено, у слушателей сменится в течение минуты' }))
+    } catch {
+      setNote((n) => ({ ...n, accent: 'Не сохранилось' }))
+    }
+  }
 
   async function saveNames() {
     if (!names) return
@@ -69,6 +85,18 @@ export function AdminAir() {
 
   return (
     <>
+      <div className="admin-air admin-air--accent">
+        <span className="admin-air__title">Акцентный цвет</span>
+        <div className="admin-air__swatches">
+          {SWATCHES.map((c) => (
+            <button key={c} type="button" aria-label={c} className={c === accent ? 'is-on' : ''} style={{ background: c }} onClick={() => saveAccent(c)} />
+          ))}
+          <label className="admin-air__custom" aria-label="Свой цвет">
+            <input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} onBlur={(e) => saveAccent(e.target.value)} />
+          </label>
+        </div>
+        {note.accent && <p className="admin-air__note">{note.accent}</p>}
+      </div>
       <div className="admin-air">
         <span className="admin-air__title">Названия эфира</span>
         <p className="admin-air__hint">Так части дня называются на главном экране. {'{DAY}'} заменяется днём недели на английском.</p>

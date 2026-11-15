@@ -469,6 +469,7 @@ export interface ProgramView {
   tunnel: string | null
   slot: { title: string; label: string; endsAt: string | null } | null
   nextSlot: { title: string; startsAt: string; show?: boolean } | null
+  accent: string | null
   items: ProgramItem[]
 }
 
@@ -545,7 +546,7 @@ export async function programView(env: Env, now: number): Promise<ProgramView> {
       "select f.id from folders f where f.kind = 'show' and exists (select 1 from folder_tracks ft join tracks t on t.id = ft.track_id where ft.folder_id = f.id and t.is_enabled = 1)",
     ).all<{ id: string }>(),
     isVpsUp(env),
-    env.DB.prepare("select value from settings where key = 'air_names'").first<{ value: string }>(),
+    env.DB.prepare("select (select value from settings where key = 'air_names') as value, (select value from settings where key = 'accent_color') as accent").first<{ value: string | null; accent: string | null }>(),
   ])
   const slots = slotsRes.results.map(toSlot)
   const filled = new Set(showsRes.results.map((r) => r.id))
@@ -556,7 +557,8 @@ export async function programView(env: Env, now: number): Promise<ProgramView> {
     now: new Date(now).toISOString(),
     vpsUp: vps,
     tunnel: null,
-    slot: slot ? { title: slot.title, label: airLabel(slot, parseAirNames(tunnelRow?.value), now), endsAt: change ? new Date(change.at).toISOString() : null } : null,
+    accent: tunnelRow?.accent ?? null,
+    slot: slot ? { title: slot.title, label: airLabel(slot, parseAirNames(tunnelRow?.value ?? undefined), now), endsAt: change ? new Date(change.at).toISOString() : null } : null,
     nextSlot: change?.slot ? { title: change.slot.title, startsAt: new Date(change.at).toISOString(), show: change.slot.folderId.startsWith('show-') } : null,
     items: items.map((r) => ({
       id: r.id,

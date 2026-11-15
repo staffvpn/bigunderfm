@@ -3,7 +3,7 @@
 .bfm {
   --ink: #0a0a0a;
   --paper: #ffffff;
-  --blue: #1f2bff;
+  --blue: var(--accent, #1f2bff);
   --quiet: #5a5a5a;
   height: 100vh;
   height: 100dvh;
@@ -345,7 +345,7 @@
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: #1f2bff;
+  background: var(--accent, #1f2bff);
   clip-path: inset(0 0 0 0);
 }
 .bfm-splash__canvas {
@@ -377,7 +377,7 @@
 /* ---------- admin, in the same hand ---------- */
 .bfm-admin {
   --ink: #0a0a0a;
-  --blue: #1f2bff;
+  --blue: var(--accent, #1f2bff);
   min-height: 100vh;
   background: #ffffff;
   color: var(--ink);
@@ -584,7 +584,7 @@
 }
 .app__admin-nav button.is-active {
   color: #ffffff;
-  border-bottom-color: #1f2bff;
+  border-bottom-color: var(--accent, #1f2bff);
 }
 
 .admin-library__num {
@@ -662,7 +662,7 @@
 .bfm-eq i {
   flex: 1;
   height: 100%;
-  background: var(--blue, #1f2bff);
+  background: var(--accent, #1f2bff);
   transform-origin: bottom;
   transform: scaleY(0.35);
 }
@@ -708,7 +708,7 @@
 
 /* ---------- like: a stamp, and the count rolls up ---------- */
 .bfm__like.is-liked {
-  color: var(--blue, #1f2bff);
+  color: var(--accent, #1f2bff);
 }
 .bfm__like.is-liked span {
   color: var(--ink, #0a0a0a);
@@ -756,7 +756,7 @@
   right: 0;
   bottom: 0.02em;
   height: 0.09em;
-  background: var(--blue, #1f2bff);
+  background: var(--accent, #1f2bff);
   transform-origin: left;
   animation: bfm-sweep 0.9s cubic-bezier(0.7, 0, 0.2, 1) both;
 }
@@ -788,7 +788,7 @@
 .bfm__countdown-time {
   flex: none;
   font-variant-numeric: tabular-nums;
-  color: #1f2bff;
+  color: var(--accent, #1f2bff);
 }
 .bfm__countdown-line {
   position: absolute;
@@ -796,7 +796,39 @@
   right: 0;
   bottom: -1px;
   height: 2px;
-  background: #1f2bff;
+  background: var(--accent, #1f2bff);
   transform-origin: left;
   transition: transform 1s linear;
+}
+
+.admin-air__swatches {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.bfm-admin .admin-air__swatches button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #0a0a0a;
+}
+.bfm-admin .admin-air__swatches button.is-on {
+  outline: 2px solid #0a0a0a;
+  outline-offset: 2px;
+}
+.admin-air__custom {
+  width: 32px;
+  height: 32px;
+  border: 1px dashed #0a0a0a;
+  overflow: hidden;
+  position: relative;
+}
+.admin-air__custom input {
+  position: absolute;
+  inset: -8px;
+  width: 48px !important;
+  height: 48px !important;
+  border: 0 !important;
+  padding: 0;
+  opacity: 0;
 }

@@ -584,10 +584,21 @@ async function handleAdminAir(env: Env): Promise<Response> {
       "select s.id, s.title, s.days, s.start_minute, s.end_minute from schedule_slots s join folders f on f.id = s.folder_id where f.kind = 'show' order by s.start_minute",
     ).all<{ id: string; title: string; days: string; start_minute: number; end_minute: number }>(),
   ])
+  const accent = await env.DB.prepare("select value from settings where key = 'accent_color'").first<{ value: string }>()
   return json({
+    accent: accent?.value ?? '#1f2bff',
     names: parseAirNames(names?.value),
     shows: shows.results.map((r) => ({ id: r.id, title: r.title, days: r.days, startMinute: r.start_minute, endMinute: r.end_minute })),
   })
+}
+
+async function handleSetAccent(req: Request, env: Env): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as { color?: string } | null
+  const color = String(body?.color ?? '').toLowerCase()
+  if (!/^#[0-9a-f]{6}$/.test(color)) return json({ error: 'Нужен цвет вида #1f2bff' }, 400)
+  await env.DB.prepare("insert into settings (key, value) values ('accent_color', ?) on conflict(key) do update set value = excluded.value").bind(color).run()
+  await dropProgramCache(env)
+  return json({ color })
 }
 
 async function handleSetAirNames(req: Request, env: Env): Promise<Response> {
@@ -1107,6 +1118,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (m === 'GET' && path === '/api/admin/rotation') return handleRotation(env)
     if (m === 'GET' && path === '/api/admin/air') return handleAdminAir(env)
     if (m === 'PUT' && path === '/api/admin/air-names') return handleSetAirNames(req, env)
+    if (m === 'PUT' && path === '/api/admin/accent') return handleSetAccent(req, env)
     const showSlot = path.match(/^\/api\/admin\/shows\/([a-z0-9-]{1,60})$/)
     if (showSlot && m === 'PUT') return handleSetShow(req, env, showSlot[1])
     if (m === 'POST' && path === '/api/admin/timers') return handleAddTimer(req, env)

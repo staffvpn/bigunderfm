@@ -2,15 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import '@fontsource/archivo-black/latin-400.css'
 
 // The greeting: BIGUNDER, then RADIO, typed letter by letter, the text always
-// stretched to fill the whole screen edge to edge, white on the station blue.
-// Then the blue folds down into the "Слушать" button.
+// stretched to fill the whole screen edge to edge, in the accent colour on
+// white. Then it folds down into the "Слушать" button.
 const FRAMES = ['B', 'BI', 'BIG', 'BIGU', 'BIGUN', 'BIGUND', 'BIGUNDE', 'BIGUNDER', 'R', 'RA', 'RAD', 'RADI', 'RADIO']
 const FRAME_MS = 100
 const HOLD_MS = 350
 const MIN_SHOWN_MS = FRAMES.length * FRAME_MS + HOLD_MS
 const LEAVE_MS = 550
 const FONT = '"Archivo Black", "Inter Tight", Arial, sans-serif'
-const BLUE = '#1f2bff'
+const accent = () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#1f2bff'
 
 function draw(canvas: HTMLCanvasElement, text: string) {
   const dpr = Math.min(window.devicePixelRatio || 1, 3)
@@ -21,7 +21,7 @@ function draw(canvas: HTMLCanvasElement, text: string) {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
   ctx.setTransform(1, 0, 0, 1, 0, 0)
-  ctx.fillStyle = BLUE
+  ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   if (!text) return
   ctx.font = `200px ${FONT}`
@@ -36,7 +36,7 @@ function draw(canvas: HTMLCanvasElement, text: string) {
   const sx = (canvas.width - pad * 2) / tw
   const sy = (canvas.height - pad * 2) / th
   ctx.setTransform(sx, 0, 0, sy, pad + left * sx, pad + top * sy)
-  ctx.fillStyle = '#ffffff'
+  ctx.fillStyle = accent()
   ctx.fillText(text, 0, 0)
 }
 

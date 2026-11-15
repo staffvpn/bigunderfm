@@ -13,6 +13,9 @@ import '@fontsource/inter-tight/cyrillic-800.css'
 import '@fontsource/inter-tight/latin-800.css'
 import './styles/theme.css'
 import './styles/redesign.css'
+import { applySavedAccent } from './lib/accent'
+
+applySavedAccent()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
