@@ -66,12 +66,10 @@ export function tuneIn(program: Program): TuneIn | null {
   return upcoming ? { item: upcoming, offsetSeconds: 0 } : null
 }
 
-// A phone that plays track after track drifts a little behind the timeline
-// (every track takes a moment to load, the phone slows down in the
-// background). That is fine: between tracks it never jumps into the middle
-// of one. The next track always starts from its beginning; only a phone so
-// far behind that its next track is already over on air skips ahead, and
-// then also to the start of the track on air.
+// Everyone hears the same moment. A phone loses a second or so loading each
+// track; the next track starts that much in, so the gap never adds up (and
+// no phone ever has to jump into the middle of a song). Only a phone far
+// behind (asleep in the background) joins wherever the air is now.
 const MAX_LAG_SECONDS = 20
 
 /** What to play once item `finishedId` ended on this phone. */
@@ -79,7 +77,10 @@ export function afterItem(program: Program, finishedId: number | null): TuneIn |
   const now = stationNow(program)
   const i = program.items.findIndex((it) => it.id === finishedId)
   const next = i >= 0 ? program.items[i + 1] : undefined
-  if (next && now < Date.parse(next.endsAt)) return { item: next, offsetSeconds: 0 }
+  if (next) {
+    const lag = (now - Date.parse(next.startsAt)) / 1000
+    if (lag <= MAX_LAG_SECONDS && now < Date.parse(next.endsAt)) return { item: next, offsetSeconds: Math.max(0, lag) }
+  }
   const live = tuneIn(program)
   if (!live) return null
   // Never restart the track that just finished because the clock says it has a few seconds left.
@@ -87,7 +88,7 @@ export function afterItem(program: Program, finishedId: number | null): TuneIn |
     const following = program.items[program.items.indexOf(live.item) + 1]
     return following ? { item: following, offsetSeconds: 0 } : null
   }
-  return { item: live.item, offsetSeconds: 0 }
+  return live
 }
 
 /**

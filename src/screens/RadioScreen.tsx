@@ -175,7 +175,7 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
     const audio = audioRef.current
     if (!audio) return false
     setNowPlaying({ artist: track.artist, title: track.title })
-    pendingSeekRef.current = offsetSeconds > 2 ? offsetSeconds : null
+    pendingSeekRef.current = offsetSeconds > 1 ? offsetSeconds : null
     trackZeroAtRef.current = Date.now() - offsetSeconds * 1000
     fadeInRef.current = offsetSeconds <= 2
     connectingRef.current = true
