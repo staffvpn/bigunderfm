@@ -702,6 +702,28 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Android app (android/): the phone's own player in the notification shade,
+  // on the lock screen and in the car shows what is on air and drives play/pause.
+  useEffect(() => {
+    const app = (window as unknown as { BigunderApp?: { update(artist: string, title: string, playing: boolean): void } }).BigunderApp
+    app?.update(nowPlaying?.artist ?? '', nowPlaying?.title ?? 'BIGUNDER FM', userStarted && !isPaused)
+  }, [nowPlaying?.artist, nowPlaying?.title, isPaused, userStarted])
+  useEffect(() => {
+    function onRemote(e: Event) {
+      const action = (e as CustomEvent<string>).detail
+      const paused = isPausedRef.current
+      if (action === 'pause' && !paused) setPlaybackIntent(false)
+      else if (action === 'play' && paused) handlePlayClick()
+      else if (action === 'toggle') {
+        if (paused) handlePlayClick()
+        else setPlaybackIntent(false)
+      }
+    }
+    window.addEventListener('bfm-remote', onRemote)
+    return () => window.removeEventListener('bfm-remote', onRemote)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     if (!('mediaSession' in navigator)) return
     navigator.mediaSession.metadata = new MediaMetadata({
