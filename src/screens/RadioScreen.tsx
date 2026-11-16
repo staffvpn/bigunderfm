@@ -288,11 +288,21 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
   }, [])
 
   // What to play once the current fallback track is over (or failed to load).
+  // On a locked phone the next track has to start in the same instant the
+  // last one ended: any wait for the network there (and iOS suspends the
+  // page the moment the sound stops) leaves the radio silent until the phone
+  // is unlocked. The app already holds the next few planned tracks, so it
+  // starts the next one at once and fetches a fresh plan only afterwards.
   async function advanceFallback() {
-    // A recent plan that already knows the next track needs no new request.
     const known = programRef.current
-    const fresh = known && Date.now() - programFetchedAtRef.current < PROGRAM_POLL_MS * 2 && afterItem(known, fallbackItemIdRef.current)
-    const p = fresh ? known : await refreshProgram()
+    const ready = known ? afterItem(known, fallbackItemIdRef.current) : null
+    if (ready && !isPausedRef.current && fallbackRef.current) {
+      playProgramItem(ready)
+      const left = known!.items.length - 1 - known!.items.findIndex((it) => it.id === ready.item.id)
+      if (left < 3 || Date.now() - programFetchedAtRef.current > PROGRAM_POLL_MS * 2) refreshProgram()
+      return
+    }
+    const p = await refreshProgram()
     if (isPausedRef.current || !fallbackRef.current) return
     const next = p ? afterItem(p, fallbackItemIdRef.current) : null
     if (next) {
@@ -564,6 +574,11 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
         return
       }
       if (isPausedRef.current || cuttingRef.current) return
+      // Cloud air: go straight on to the next track, with no awaits in between.
+      if (!LIVE_SERVER) {
+        advanceFallback()
+        return
+      }
       // Between tracks is the one moment switching back is seamless. The
       // backend checks the radio server every minute; only when it says the
       // server is back (or we have no word from it) is it worth the wait.
