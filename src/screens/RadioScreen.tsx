@@ -895,7 +895,11 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
   // (or the one on right now, if this phone is still finishing the last one).
   const programItems = program?.items ?? []
   const fallbackItemIndex = fallbackItem ? programItems.findIndex((it) => it.id === fallbackItem.id) : -1
-  const programNext = fallbackItem ? (fallbackItemIndex >= 0 ? programItems[fallbackItemIndex + 1] : programItems[0]) : undefined
+  // Jingles are not announced as "next": the row names the next real track,
+  // the same as the grid.
+  const programNext = fallbackItem
+    ? programItems.slice(fallbackItemIndex >= 0 ? fallbackItemIndex + 1 : 0).find((it) => it.kind !== 'jingle')
+    : undefined
   const nextTrack = fallback && fallbackItem ? programNext?.track : nextEntry?.track
 
   const isNewTrack =
