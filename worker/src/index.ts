@@ -1,5 +1,5 @@
 import type { Env } from './env'
-import { handleBotUpdate, callTelegram, promoteDemoIfLiked, nextPlaylistPosition } from './bot'
+import { handleBotUpdate, callTelegram, promoteDemoIfLiked, nextPlaylistPosition, sendMessage } from './bot'
 import { signJwt, verifyJwt, type Claims } from './jwt'
 import { verifyInitData } from './telegramAuth'
 import { CORS_HEADERS, audioContentType, buildMediaKey, buildTrackKey, imageContentType, json, nowIso, safeEqual, sleep } from './util'
@@ -309,6 +309,58 @@ async function handleRestoreTrack(env: Env, id: string): Promise<Response> {
 }
 
 /** Once in a while: audio of tracks deleted more than TRASH_DAYS ago goes for good. */
+// ---------- health check: tells the admins in Telegram when the air is in trouble ----------
+
+const HEALTH_KEY = 'health_alert'
+const HEALTH_REPEAT_MS = 6 * 3600_000
+
+/** What is wrong with the air right now, in words for the admins (null: all fine). */
+async function airProblem(env: Env): Promise<string | null> {
+  if (env.LIVE_SERVER !== '0') return null
+  const now = new Date().toISOString()
+  let row: { file_path: string } | null
+  try {
+    row = await env.DB.prepare(
+      'select t.file_path from program p join tracks t on t.id = p.track_id where p.starts_at <= ? and p.ends_at > ? limit 1',
+    )
+      .bind(now, now)
+      .first<{ file_path: string }>()
+  } catch {
+    return 'База данных радио не отвечает (Cloudflare D1).'
+  }
+  if (!row) return 'Эфир не спланирован: сейчас в сетке ничего нет. Проверь, что в папках есть включённые треки.'
+  try {
+    const obj = await env.MEDIA.head(row.file_path)
+    if (!obj) return `Файл текущего трека не найден в хранилище: ${row.file_path}`
+  } catch {
+    return 'Хранилище треков (Cloudflare R2) не отвечает: радио не играет. Проверь dash.cloudflare.com, раздел R2 и оплату (Billing).'
+  }
+  return null
+}
+
+async function healthCheck(env: Env): Promise<void> {
+  const problem = await airProblem(env)
+  const prev = await env.DB.prepare('select value from settings where key = ?').bind(HEALTH_KEY).first<{ value: string }>()
+  const [atRaw, ...rest] = (prev?.value ?? '').split('|')
+  const prevAt = Number(atRaw) || 0
+  const prevText = rest.join('|')
+  let text: string | null = null
+  if (problem && (problem !== prevText || Date.now() - prevAt > HEALTH_REPEAT_MS)) text = `BIGUNDER FM: проблема с эфиром.\n${problem}`
+  else if (!problem && prevText) text = 'BIGUNDER FM: эфир снова в порядке.'
+  if (!text) return
+  await env.DB.prepare('insert into settings (key, value) values (?, ?) on conflict(key) do update set value = excluded.value')
+    .bind(HEALTH_KEY, problem ? `${Date.now()}|${problem}` : '0|')
+    .run()
+  const { results } = await env.DB.prepare('select telegram_user_id from admins').all<{ telegram_user_id: number }>()
+  for (const a of results) {
+    try {
+      await sendMessage(env, Number(a.telegram_user_id), text)
+    } catch {
+      // that admin never started the bot
+    }
+  }
+}
+
 async function purgeTrash(env: Env): Promise<void> {
   const before = new Date(Date.now() - TRASH_DAYS * 86_400_000).toISOString()
   const { results } = await env.DB.prepare('select id, row_json from track_trash where deleted_at < ? limit 50').bind(before).all<{ id: string; row_json: string }>()
@@ -1397,5 +1449,6 @@ export default {
     ctx.waitUntil(sampleListeners(env))
     ctx.waitUntil(sendDueReminders(env))
     if (new Date().getUTCMinutes() === 7) ctx.waitUntil(purgeTrash(env))
+    if (new Date().getUTCMinutes() % 5 === 2) ctx.waitUntil(healthCheck(env))
   },
 }

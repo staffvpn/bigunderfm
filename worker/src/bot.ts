@@ -41,7 +41,7 @@ export async function callTelegram(env: Env, method: string, body: Record<string
   return res.json().catch(() => null)
 }
 
-async function sendMessage(env: Env, chatId: number, text: string): Promise<number | null> {
+export async function sendMessage(env: Env, chatId: number, text: string): Promise<number | null> {
   const result = await callTelegram(env, 'sendMessage', { chat_id: chatId, text })
   return result?.result?.message_id ?? null
 }
@@ -172,7 +172,7 @@ async function processAudioMessage(env: Env, message: TelegramMessage, audio: Te
     return
   }
   if (audio.file_size && audio.file_size > TELEGRAM_DOWNLOAD_LIMIT) {
-    await sendMessage(env, chatId, '🚨 Файл больше 20 МБ — это лимит самого Telegram на скачивание файлов ботом, в коде это не обойти.')
+    await sendMessage(env, chatId, 'Файл больше 20 МБ — это лимит самого Telegram на скачивание файлов ботом, в коде это не обойти.')
     return
   }
 
@@ -183,7 +183,7 @@ async function processAudioMessage(env: Env, message: TelegramMessage, audio: Te
     await sendMessage(
       env,
       chatId,
-      tooBig ? '🚨 Файл больше 20 МБ — это лимит самого Telegram на скачивание ботом, обойти нельзя.' : 'Не получилось скачать файл из Telegram.',
+      tooBig ? 'Файл больше 20 МБ — это лимит самого Telegram на скачивание ботом, обойти нельзя.' : 'Не получилось скачать файл из Telegram.',
     )
     return
   }
