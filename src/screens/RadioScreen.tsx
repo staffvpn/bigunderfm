@@ -50,6 +50,8 @@ const PROGRAM_POLL_MS = 5 * 60_000
 // "Новинка" badge on the stream, same two weeks the rotation uses.
 const NEW_FOR_MS = 14 * 86_400_000
 const STREAM_CONNECT_TIMEOUT_MS = 5000
+// No progress for this long while meant to be playing: the connection is dead.
+const STALL_MS = 12000
 // The relay has to fetch a playlist and a first 8-second file before sound starts.
 const RELAY_CONNECT_TIMEOUT_MS = 12000
 
@@ -185,7 +187,15 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
     setIsBuffering(true)
     detachLive()
     audio.src = mediaUrl(track.filePath)
-    audio.play().catch(() => {})
+    audio.play().catch((err: unknown) => {
+      // The phone refused to start sound without a tap. On screen: show the
+      // play button again. In the background: coming back to the app resumes.
+      if ((err as { name?: string })?.name !== 'NotAllowedError' || document.visibilityState !== 'visible') return
+      if (audioRef.current?.src !== audio.src || !audio.paused) return
+      connectingRef.current = false
+      setIsBuffering(false)
+      setIsPaused(true)
+    })
     return true
   }
 
@@ -225,6 +235,49 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
     setFallbackIndex(i)
     return startFallbackAudio(entry.track, offsetSeconds)
   }
+
+  const errorRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastPlayIntentAtRef = useRef(0)
+  // Stall watchdog: a dropped connection can leave the audio "playing"
+  // without sound and without any error. If the track has not moved for a
+  // while, rejoin the air; and rejoin at once when the network comes back.
+  const progressRef = useRef({ t: -1, at: 0 })
+  function stalledFor(audio: HTMLAudioElement): number {
+    const p = progressRef.current
+    if (audio.paused || p.t !== audio.currentTime) return 0
+    return Date.now() - p.at
+  }
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const audio = audioRef.current
+      if (!audio) return
+      const p = progressRef.current
+      if (p.t !== audio.currentTime) {
+        progressRef.current = { t: audio.currentTime, at: Date.now() }
+        return
+      }
+      if (!fallbackRef.current || isPausedRef.current || errorRetryRef.current) return
+      if (stalledFor(audio) > STALL_MS) {
+        progressRef.current = { t: audio.currentTime, at: Date.now() }
+        tuneInFallback()
+      }
+    }, 2000)
+    function onOnline() {
+      const audio = audioRef.current
+      if (!audio || !fallbackRef.current || isPausedRef.current) return
+      if (audio.paused || stalledFor(audio) > 3000 || errorRetryRef.current) {
+        if (errorRetryRef.current) clearTimeout(errorRetryRef.current)
+        errorRetryRef.current = null
+        tuneInFallback()
+      }
+    }
+    window.addEventListener('online', onOnline)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('online', onOnline)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // A track the station cut short (a timer starts exactly on time, or an
   // admin skipped it) is left at that moment rather than played to its end.
@@ -295,7 +348,10 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
   // starts the next one at once and fetches a fresh plan only afterwards.
   async function advanceFallback() {
     const known = programRef.current
-    const ready = known ? afterItem(known, fallbackItemIdRef.current) : null
+    // Only a plan that still has the finished track in it can be trusted
+    // without asking (otherwise the air was re-laid meanwhile).
+    const id = fallbackItemIdRef.current
+    const ready = known && known.items.some((it) => it.id === id) ? afterItem(known, id) : null
     if (ready && !isPausedRef.current && fallbackRef.current) {
       playProgramItem(ready)
       const left = known!.items.length - 1 - known!.items.findIndex((it) => it.id === ready.item.id)
@@ -451,7 +507,7 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
         // Meant to be playing but the phone stopped us in the background:
         // pick the air up again at once.
         const audio = audioRef.current
-        if (audio && fallbackRef.current && !isPausedRef.current && !connectingRef.current && (audio.paused || audio.ended)) {
+        if (audio && fallbackRef.current && !isPausedRef.current && (audio.paused || audio.ended || stalledFor(audio) > STALL_MS)) {
           audio.volume = 1
           tuneInFallback()
         }
@@ -521,6 +577,8 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       setConnectError(false)
       reconnectAttemptsRef.current = 0
       fallbackErrorsRef.current = 0
+      if (errorRetryRef.current) clearTimeout(errorRetryRef.current)
+      errorRetryRef.current = null
     }
     function handleLoadedMetadata() {
       const t = pendingSeekRef.current
@@ -554,16 +612,20 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
         if (isPausedRef.current) return
         // A broken or missing file - move on to the next track rather than
         // stopping, but give up if nothing in the library will play.
+        // A lost connection (a tunnel, a lift) is not the file's fault: rejoin
+        // the air where it is now. Only a file that keeps failing is skipped.
+        // While the listener still wants music this never gives up: it keeps
+        // retrying, less often the longer the network is gone.
         fallbackErrorsRef.current += 1
-        if (fallbackErrorsRef.current > 5) {
-          setIsBuffering(false)
-          setIsPaused(true)
-          setConnectError(true)
-          return
-        }
-        setTimeout(() => {
-          if (!isPausedRef.current) advanceFallback()
-        }, 1000)
+        const n = fallbackErrorsRef.current
+        setIsBuffering(true)
+        if (errorRetryRef.current) clearTimeout(errorRetryRef.current)
+        errorRetryRef.current = setTimeout(() => {
+          errorRetryRef.current = null
+          if (isPausedRef.current || !fallbackRef.current) return
+          if (n % 3 === 0) advanceFallback()
+          else tuneInFallback()
+        }, Math.min(1000 * n, 15000))
         return
       }
       scheduleReconnect()
@@ -637,6 +699,8 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       // drop-triggered retry landing a second after the user paused would
       // otherwise silently start the stream back up underneath them.
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      if (errorRetryRef.current) clearTimeout(errorRetryRef.current)
+      errorRetryRef.current = null
       clearStreamWatchdog()
       reconnectAttemptsRef.current = 0
       connectingRef.current = false
@@ -655,7 +719,8 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
     // connections landing at the same timestamp. A ref (not React state)
     // because it must be visible to the second call synchronously, before
     // either has yielded back to the event loop for a re-render.
-    if (connectingRef.current) return
+    if (Date.now() - lastPlayIntentAtRef.current < 1500) return
+    lastPlayIntentAtRef.current = Date.now()
     connectingRef.current = true
 
     // Fresh, explicit attempt — forget any exhausted auto-reconnect streak
@@ -694,7 +759,10 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
     // Ignore taps while a connection attempt is already in flight — a
     // second overlapping audio.load()/play() here just restarts the
     // buffering clock rather than doing anything useful.
-    if (isBuffering) return
+    if (isBuffering && !isPaused) {
+      setPlaybackIntent(false)
+      return
+    }
     setPlaybackIntent(isPaused)
   }
 
