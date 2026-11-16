@@ -612,6 +612,53 @@ async function handleSetAirNames(req: Request, env: Env): Promise<Response> {
   return json({ names })
 }
 
+function readShow(body: { title?: string; days?: string; startMinute?: number; endMinute?: number } | null) {
+  const title = String(body?.title ?? '').trim().slice(0, 60)
+  const days = [...new Set(String(body?.days ?? '').replace(/[^1-7]/g, ''))].sort().join('')
+  const start = Math.trunc(Number(body?.startMinute))
+  const end = Math.trunc(Number(body?.endMinute))
+  const minuteOk = (n: number) => Number.isFinite(n) && n >= 0 && n < 1440
+  const ok = !!title && !!days && minuteOk(start) && minuteOk(end) && start !== end
+  return { ok, title, days, start, end }
+}
+
+/** A new show: its own folder (tracks go in it from the library) and its slot in the week. */
+async function handleCreateShow(req: Request, env: Env): Promise<Response> {
+  const show = readShow((await req.json().catch(() => null)) as Parameters<typeof readShow>[0])
+  if (!show.ok) return json({ error: 'Проверьте название, дни и время' }, 400)
+  const key = crypto.randomUUID().slice(0, 8)
+  const max = await env.DB.prepare('select max(position) as p from folders').first<{ p: number | null }>()
+  await env.DB.batch([
+    env.DB.prepare("insert into folders (id, name, kind, position) values (?, ?, 'show', ?)").bind(`show-${key}`, show.title, (max?.p ?? 0) + 1),
+    env.DB.prepare('insert into schedule_slots (id, folder_id, title, days, start_minute, end_minute, priority) values (?, ?, ?, ?, ?, ?, 10)').bind(
+      `slot-${key}`,
+      `show-${key}`,
+      show.title,
+      show.days,
+      show.start,
+      show.end,
+    ),
+  ])
+  await replanFuture(env, Date.now())
+  await dropProgramCache(env)
+  return json({ ok: true, id: `slot-${key}` })
+}
+
+/** Removes a show and its folder; its tracks stay in the library. */
+async function handleDeleteShow(env: Env, slotId: string): Promise<Response> {
+  const slot = await env.DB.prepare(
+    "select s.folder_id from schedule_slots s join folders f on f.id = s.folder_id where s.id = ? and f.kind = 'show'",
+  )
+    .bind(slotId)
+    .first<{ folder_id: string }>()
+  if (!slot) return json({ error: 'Шоу не найдено' }, 404)
+  // Slot and folder links go with the folder (ON DELETE CASCADE).
+  await env.DB.prepare('delete from folders where id = ?').bind(slot.folder_id).run()
+  await replanFuture(env, Date.now())
+  await dropProgramCache(env)
+  return json({ ok: true })
+}
+
 async function handleSetShow(req: Request, env: Env, slotId: string): Promise<Response> {
   const body = (await req.json().catch(() => null)) as { title?: string; days?: string; startMinute?: number; endMinute?: number } | null
   const title = String(body?.title ?? '').trim().slice(0, 60)
@@ -1121,6 +1168,8 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (m === 'PUT' && path === '/api/admin/accent') return handleSetAccent(req, env)
     const showSlot = path.match(/^\/api\/admin\/shows\/([a-z0-9-]{1,60})$/)
     if (showSlot && m === 'PUT') return handleSetShow(req, env, showSlot[1])
+    if (showSlot && m === 'DELETE') return handleDeleteShow(env, showSlot[1])
+    if (m === 'POST' && path === '/api/admin/shows') return handleCreateShow(req, env)
     if (m === 'POST' && path === '/api/admin/timers') return handleAddTimer(req, env)
     const timerId = path.match(/^\/api\/admin\/timers\/(\d+)$/)
     if (timerId && m === 'DELETE') return handleDeleteTimer(env, Number(timerId[1]))

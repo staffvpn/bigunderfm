@@ -832,3 +832,16 @@
   padding: 0;
   opacity: 0;
 }
+
+.admin-air__actions {
+  display: flex;
+  gap: 10px;
+}
+.admin-air__actions button:first-child {
+  flex: 1;
+}
+.bfm-admin .admin-air__actions .admin-air__delete {
+  background: #ffffff;
+  color: #0a0a0a;
+  padding: 0 14px;
+}

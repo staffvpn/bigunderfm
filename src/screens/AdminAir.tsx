@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { applyAccent } from '../lib/accent'
+import { confirmAction } from '../lib/telegram'
 
 // What listeners read on the main screen instead of the folder names
 // (morning / day / evening / night), and the shows: name, days, time.
@@ -27,6 +28,45 @@ const toTime = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${
 const toMinute = (t: string) => {
   const [h, m] = t.split(':').map(Number)
   return h * 60 + m
+}
+
+/** Name, days and hours of a show: the same fields for editing and for a new one. */
+function showFields(show: Show, change: (patch: Partial<Show>) => void) {
+  return (
+    <>
+      <label className="admin-air__field">
+        <span>Название</span>
+        <input value={show.title} maxLength={60} onChange={(e) => change({ title: e.target.value })} />
+      </label>
+      <div className="admin-air__days">
+        {DAYS.map((d, i) => {
+          const digit = String(i + 1)
+          const on = show.days.includes(digit)
+          return (
+            <button
+              key={d}
+              type="button"
+              className={on ? 'is-on' : ''}
+              aria-pressed={on}
+              onClick={() => change({ days: on ? show.days.replace(digit, '') : [...show.days, digit].sort().join('') })}
+            >
+              {d}
+            </button>
+          )
+        })}
+      </div>
+      <div className="admin-air__times">
+        <label className="admin-air__field">
+          <span>Начало</span>
+          <input type="time" value={toTime(show.startMinute)} onChange={(e) => e.target.value && change({ startMinute: toMinute(e.target.value) })} />
+        </label>
+        <label className="admin-air__field">
+          <span>Конец</span>
+          <input type="time" value={toTime(show.endMinute)} onChange={(e) => e.target.value && change({ endMinute: toMinute(e.target.value) })} />
+        </label>
+      </div>
+    </>
+  )
 }
 
 export function AdminAir() {
@@ -71,6 +111,33 @@ export function AdminAir() {
   function patchShow(id: string, patch: Partial<Show>) {
     setShows((list) => list.map((s) => (s.id === id ? { ...s, ...patch } : s)))
     setNote((n) => ({ ...n, [id]: '' }))
+  }
+
+  const [draft, setDraft] = useState<Show>({ id: 'new', title: '', days: '6', startMinute: 21 * 60, endMinute: 22 * 60 })
+  function reloadShows() {
+    api<{ shows: Show[] }>('/api/admin/air')
+      .then((data) => setShows(data.shows))
+      .catch(() => {})
+  }
+  async function createShow() {
+    setNote((n) => ({ ...n, new: 'Создаю...' }))
+    try {
+      await api('/api/admin/shows', { method: 'POST', body: draft })
+      setDraft({ ...draft, title: '' })
+      setNote((n) => ({ ...n, new: 'Шоу создано. Положи в его папку треки в библиотеке, и оно выйдет в эфир в своё время.' }))
+      reloadShows()
+    } catch (err) {
+      setNote((n) => ({ ...n, new: err instanceof Error && err.message ? err.message : 'Не получилось' }))
+    }
+  }
+  async function deleteShow(show: Show) {
+    if (!(await confirmAction(`Удалить шоу ${show.title}? Треки останутся в библиотеке.`))) return
+    try {
+      await api(`/api/admin/shows/${show.id}`, { method: 'DELETE' })
+      reloadShows()
+    } catch (err) {
+      setNote((n) => ({ ...n, [show.id]: err instanceof Error && err.message ? err.message : 'Не получилось' }))
+    }
   }
 
   async function saveShow(show: Show) {
@@ -118,41 +185,24 @@ export function AdminAir() {
         <p className="admin-air__hint">Шоу выходит в эфир само в своё время, если в его папке есть треки.</p>
         {shows.map((show) => (
           <div className="admin-air__show" key={show.id}>
-            <label className="admin-air__field">
-              <span>Название</span>
-              <input value={show.title} maxLength={60} onChange={(e) => patchShow(show.id, { title: e.target.value })} />
-            </label>
-            <div className="admin-air__days">
-              {DAYS.map((d, i) => {
-                const digit = String(i + 1)
-                const on = show.days.includes(digit)
-                return (
-                  <button
-                    key={d}
-                    type="button"
-                    className={on ? 'is-on' : ''}
-                    aria-pressed={on}
-                    onClick={() => patchShow(show.id, { days: on ? show.days.replace(digit, '') : [...show.days, digit].sort().join('') })}
-                  >
-                    {d}
-                  </button>
-                )
-              })}
+            {showFields(show, (patch) => patchShow(show.id, patch))}
+            <div className="admin-air__actions">
+              <button onClick={() => saveShow(show)}>Сохранить шоу</button>
+              <button className="admin-air__delete" onClick={() => deleteShow(show)}>
+                Удалить
+              </button>
             </div>
-            <div className="admin-air__times">
-              <label className="admin-air__field">
-                <span>Начало</span>
-                <input type="time" value={toTime(show.startMinute)} onChange={(e) => e.target.value && patchShow(show.id, { startMinute: toMinute(e.target.value) })} />
-              </label>
-              <label className="admin-air__field">
-                <span>Конец</span>
-                <input type="time" value={toTime(show.endMinute)} onChange={(e) => e.target.value && patchShow(show.id, { endMinute: toMinute(e.target.value) })} />
-              </label>
-            </div>
-            <button onClick={() => saveShow(show)}>Сохранить шоу</button>
             {note[show.id] && <p className="admin-air__note">{note[show.id]}</p>}
           </div>
         ))}
+        <div className="admin-air__show">
+          <span className="admin-air__title">Новое шоу</span>
+          {showFields(draft, (patch) => setDraft({ ...draft, ...patch }))}
+          <button onClick={createShow} disabled={!draft.title.trim() || !draft.days}>
+            Добавить шоу
+          </button>
+          {note.new && <p className="admin-air__note">{note.new}</p>}
+        </div>
       </div>
     </>
   )
