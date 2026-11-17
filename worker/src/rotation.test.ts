@@ -30,9 +30,9 @@ function library(): RTrack[] {
 }
 
 /** Runs the rotation for `count` picks starting at `start`, like the planner does. */
-function run(tracks: RTrack[], start: number, count: number, autoHits: string[] = []) {
+function run(tracks: RTrack[], start: number, count: number, autoHits: string[] = [], played: [string, number][] = []) {
   const recent: RPlayed[] = []
-  const lastPlayed = new Map<string, number>()
+  const lastPlayed = new Map<string, number>(played)
   const out: { id: string; kind: string; slot: string | null; at: number }[] = []
   let now = start
   let seed = 7
@@ -162,5 +162,22 @@ describe('rotation', () => {
     expect(plays.length).toBe(3)
     const none = pickNext({ tracks: library(), folders, slots: [], recent: [], lastPlayed: new Map(), autoHitIds: new Set(), now: 0 })
     expect(none?.slot).toBeNull()
+  })
+})
+
+describe('a show made of one long mix', () => {
+  it('plays this week\'s mix once, never starts last week\'s, then hands back to the day part', () => {
+    const fri = msk('2026-11-13T18:58:00')
+    const tracks = [
+      ...library(),
+      track('mix-new', ['show'], { duration: 2400 }),
+      track('mix-old', ['show'], { duration: 2400 }),
+    ]
+    const out = run(tracks, fri, 30, [], [['mix-old', fri - 7 * 24 * 3600_000]])
+    const show = out.filter((o) => o.slot === 's')
+    expect(show.map((o) => o.id).filter((id) => id.startsWith('mix'))).toEqual(['mix-new'])
+    expect(out.some((o) => o.id === 'mix-old' && o.at < msk('2026-11-13T21:00:00'))).toBe(false)
+    const afterMix = out.find((o) => o.at > out.find((x) => x.id === 'mix-new')!.at)!
+    expect(afterMix.slot).not.toBe('s')
   })
 })

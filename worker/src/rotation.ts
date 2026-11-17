@@ -195,11 +195,16 @@ export function pickNext(input: RotationInput): Pick | null {
   // A show plays each of its tracks once per airing: when all of them have
   // been heard in the last hours, the air goes back to the day part under it.
   const showFolder = (sl: RSlot) => folders.find((f) => f.id === sl.folderId)?.kind === 'show'
-  const showFresh = (sl: RSlot) => poolFor(sl, tracks, folders).filter((t) => now - (input.lastPlayed.get(t.id) ?? 0) >= SHOW_GAP_MS)
-  const usableNow = (sl: RSlot) => usable(sl) && (!showFolder(sl) || showFresh(sl).length > 0)
-  const slot = activeSlot(slots, now, usableNow)
   const change = nextSlotChange(slots, now, usable)
   const roomSeconds = change ? (change.at - now) / 1000 : null
+  // ...and a long mix only starts if it fits in what is left of the show
+  // (5 minutes over is fine): last week's 40-minute mix must not start at
+  // 19:45 and run into the next hour.
+  const fitsShow = (t: RTrack) => roomSeconds === null || t.duration <= roomSeconds + 300
+  const showFresh = (sl: RSlot) =>
+    poolFor(sl, tracks, folders).filter((t) => now - (input.lastPlayed.get(t.id) ?? 0) >= SHOW_GAP_MS && fitsShow(t))
+  const usableNow = (sl: RSlot) => usable(sl) && (!showFolder(sl) || showFresh(sl).length > 0)
+  const slot = activeSlot(slots, now, usableNow)
 
   // Jingle: after every JINGLE_EVERY tracks, the least recently heard one.
   const jingles = tracks.filter((t) => t.kind === 'jingle')
