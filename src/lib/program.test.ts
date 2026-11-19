@@ -41,11 +41,18 @@ describe('program timeline', () => {
     expect(t?.offsetSeconds).toBeCloseTo(70)
   })
 
-  it('starts the next track as far in as the phone is behind, so it stays in step', () => {
+  it('starts the next track from the top when the phone is a few seconds behind', () => {
     vi.setSystemTime(T0 + 182_000)
     const t = afterItem(program([item(1, 0, 180), item(2, 180, 200)]), 1)
     expect(t?.item.id).toBe(2)
-    expect(t?.offsetSeconds).toBeCloseTo(2)
+    expect(t?.offsetSeconds).toBe(0)
+  })
+
+  it('skips ahead into the next track when clearly behind', () => {
+    vi.setSystemTime(T0 + 192_000)
+    const t = afterItem(program([item(1, 0, 180), item(2, 180, 200)]), 1)
+    expect(t?.item.id).toBe(2)
+    expect(t?.offsetSeconds).toBeCloseTo(12)
   })
 
   it('joins the air where it is when far behind', () => {

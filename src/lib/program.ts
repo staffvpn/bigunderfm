@@ -69,11 +69,14 @@ export function tuneIn(program: Program): TuneIn | null {
   return upcoming ? { item: upcoming, offsetSeconds: 0 } : null
 }
 
-// Everyone hears the same moment. A phone loses a second or so loading each
-// track; the next track starts that much in, so the gap never adds up (and
-// no phone ever has to jump into the middle of a song). Only a phone far
-// behind (asleep in the background) joins wherever the air is now.
+// Everyone hears roughly the same moment. The next track is loaded ahead of
+// time, so a phone is rarely behind at all; when it is a few seconds behind,
+// the next track still starts from its very first second (cutting the intro
+// sounds broken). Only a phone clearly behind skips ahead, and one far behind
+// (asleep in the background) joins wherever the air is now.
 const MAX_LAG_SECONDS = 20
+/** Behind by less than this, the next track starts from the top. */
+export const SKIP_IF_BEHIND_SECONDS = 8
 
 /** What to play once item `finishedId` ended on this phone. */
 export function afterItem(program: Program, finishedId: number | null): TuneIn | null {
@@ -82,7 +85,7 @@ export function afterItem(program: Program, finishedId: number | null): TuneIn |
   const next = i >= 0 ? program.items[i + 1] : undefined
   if (next) {
     const lag = (now - Date.parse(next.startsAt)) / 1000
-    if (lag <= MAX_LAG_SECONDS && now < Date.parse(next.endsAt)) return { item: next, offsetSeconds: Math.max(0, lag) }
+    if (lag <= MAX_LAG_SECONDS && now < Date.parse(next.endsAt)) return { item: next, offsetSeconds: lag > SKIP_IF_BEHIND_SECONDS ? lag : 0 }
   }
   const live = tuneIn(program)
   if (!live) return null

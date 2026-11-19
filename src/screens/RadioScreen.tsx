@@ -59,6 +59,8 @@ const RELAY_CONNECT_TIMEOUT_MS = 12000
 // straight to the fallback instead of first trying the dead server again.
 const VPS_DOWN_KEY = 'bfm_vps_down_at'
 const VPS_DOWN_TTL_MS = 15 * 60 * 1000
+// A tenth of a second of silence, used once to unlock the second player.
+const SILENT_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQQAAACAgICA'
 function rememberVpsDown(down: boolean) {
   try {
     if (down) localStorage.setItem(VPS_DOWN_KEY, String(Date.now()))
@@ -102,6 +104,13 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
   // stable "vibe" that outlasts any one track), per explicit request.
   const [background, setBackground] = useState<BackgroundItem | undefined>(() => pickNextBackground())
   const audioRef = useRef<HTMLAudioElement>(null)
+  // Second player, for radio-style joins: it loads the next jingle ahead of
+  // time and plays it over the end of the track, while the main player
+  // starts the following track under the jingle's tail. Tracks themselves
+  // always stay on the main player (lock screen, Media Session, watchdogs).
+  const preRef = useRef<HTMLAudioElement>(null)
+  const deckRef = useRef<{ jingleId: number; waiting: boolean } | null>(null)
+  const warmedRef = useRef<number | null>(null)
 
   // isPausedRef mirrors the isPaused state but is readable from the
   // mount-once effect's closures below without going stale — those
@@ -197,6 +206,52 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       setIsPaused(true)
     })
     return true
+  }
+
+  // The next item or two after the one playing now.
+  function upcoming(): ProgramItem[] {
+    const p = programRef.current
+    const id = fallbackItemIdRef.current
+    if (!p || id === null) return []
+    const i = p.items.findIndex((it) => it.id === id)
+    return i >= 0 ? p.items.slice(i + 1, i + 3) : []
+  }
+  // Fetches the start of a file now, so the switch to it is instant
+  // (the media proxy marks files cacheable for a day).
+  function warmFile(it: ProgramItem) {
+    fetch(mediaUrl(it.track.filePath), { headers: { Range: 'bytes=0-1048575' } }).catch(() => {})
+  }
+  // About half a minute before the end: the next jingle goes into the second
+  // player, the next track's first megabyte into the cache.
+  function warmAhead() {
+    const [n1, n2] = upcoming()
+    if (!n1 || warmedRef.current === n1.id) return
+    warmedRef.current = n1.id
+    const pre = preRef.current
+    if (n1.kind === 'jingle' && pre) {
+      pre.src = mediaUrl(n1.track.filePath)
+      pre.preload = 'auto'
+      pre.load()
+      if (n2) warmFile(n2)
+    } else {
+      warmFile(n1)
+    }
+  }
+  function stopDeck() {
+    deckRef.current = null
+    const pre = preRef.current
+    if (pre && !pre.paused) pre.pause()
+  }
+  // The jingle on the second player is nearly over: the next track starts
+  // on the main player under its tail.
+  function startAfterJingle() {
+    const d = deckRef.current
+    if (!d) return
+    deckRef.current = null
+    const p = programRef.current
+    const next = p ? afterItem(p, d.jingleId) : null
+    if (next && !isPausedRef.current && fallbackRef.current) playProgramItem(next)
+    else advanceFallback()
   }
 
   // The station's planned air (see lib/program.ts).
@@ -307,6 +362,10 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
   useEffect(() => {
     const FADE_OUT = 1.6
     const FADE_IN = 0.9
+    // iPhones cannot fade a player, so there the overlap is kept short.
+    const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent)
+    const JINGLE_IN = IOS ? 0.6 : 1.5
+    const JINGLE_TAIL = IOS ? 0.4 : 1.0
     const timer = setInterval(() => {
       const audio = audioRef.current
       if (!audio) return
@@ -316,6 +375,36 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       // half-way (music left near silent) and an early switch could miss.
       // There the file simply plays to its end and 'ended' moves on.
       const hidden = document.visibilityState !== 'visible'
+      const pre = preRef.current
+      const deck = deckRef.current
+      // The main player waits while the jingle plays on the second one.
+      if (deck?.waiting && pre) {
+        if (isPausedRef.current || !fallbackRef.current) {
+          stopDeck()
+        } else if (pre.ended || pre.error || (Number.isFinite(pre.duration) && pre.duration - pre.currentTime <= JINGLE_TAIL)) {
+          startAfterJingle()
+        }
+        return
+      }
+      if (!hidden && fallbackRef.current && !isPausedRef.current && item && item.kind !== 'jingle' && Number.isFinite(audio.duration)) {
+        const planned0 = (Date.parse(item.endsAt) - Date.parse(item.startsAt)) / 1000
+        const rest0 = Math.min(audio.duration, planned0) - audio.currentTime
+        if (rest0 < 30) warmAhead()
+        const [n1] = upcoming()
+        // The jingle comes in over the last moment of the track.
+        if (!deck && pre && n1 && n1.kind === 'jingle' && warmedRef.current === n1.id && pre.readyState >= 3 && rest0 <= JINGLE_IN && rest0 > 0.2) {
+          deckRef.current = { jingleId: n1.id, waiting: false }
+          try {
+            pre.currentTime = 0
+          } catch {
+            // a fresh file starts at zero anyway
+          }
+          pre.volume = 1
+          pre.play().catch(() => {
+            deckRef.current = null
+          })
+        }
+      }
       if (hidden || !fallbackRef.current || isPausedRef.current || !item || item.kind === 'jingle' || !Number.isFinite(audio.duration)) {
         if (audio.volume !== 1) audio.volume = 1
         return
@@ -347,6 +436,18 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
   // is unlocked. The app already holds the next few planned tracks, so it
   // starts the next one at once and fetches a fresh plan only afterwards.
   async function advanceFallback() {
+    // The jingle already started on the second player over this track's end:
+    // the main player falls silent and waits for the jingle's tail.
+    const deck = deckRef.current
+    if (deck && !deck.waiting && preRef.current && !preRef.current.paused) {
+      deck.waiting = true
+      const item = programRef.current?.items.find((it) => it.id === deck.jingleId)
+      fallbackItemIdRef.current = deck.jingleId
+      if (item) setFallbackItem(item)
+      audioRef.current?.pause()
+      return
+    }
+    if (deck) stopDeck()
     const known = programRef.current
     // Only a plan that still has the finished track in it can be trusted
     // without asking (otherwise the air was re-laid meanwhile).
@@ -507,7 +608,7 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
         // Meant to be playing but the phone stopped us in the background:
         // pick the air up again at once.
         const audio = audioRef.current
-        if (audio && fallbackRef.current && !isPausedRef.current && (audio.paused || audio.ended || stalledFor(audio) > STALL_MS)) {
+        if (audio && fallbackRef.current && !isPausedRef.current && !deckRef.current?.waiting && (audio.paused || audio.ended || stalledFor(audio) > STALL_MS)) {
           audio.volume = 1
           tuneInFallback()
         }
@@ -707,6 +808,7 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       setIsBuffering(false)
       setConnectError(false)
       audio.pause()
+      stopDeck()
       return
     }
 
@@ -721,6 +823,20 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
     // either has yielded back to the event loop for a re-render.
     if (Date.now() - lastPlayIntentAtRef.current < 1500) return
     lastPlayIntentAtRef.current = Date.now()
+    // iPhones only let a player start on its own once it has been started by
+    // a tap: wake the second player now, silently, so the jingle can come in later.
+    const pre = preRef.current
+    if (pre && !pre.dataset.unlocked) {
+      pre.dataset.unlocked = '1'
+      pre.muted = true
+      if (!pre.src) pre.src = SILENT_WAV
+      pre.play().then(() => {
+        pre.pause()
+        pre.muted = false
+      }).catch(() => {
+        pre.muted = false
+      })
+    }
     connectingRef.current = true
 
     // Fresh, explicit attempt — forget any exhausted auto-reconnect streak
@@ -969,6 +1085,7 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
       <Socials />
       <div hidden>
         <audio ref={audioRef} preload="none" />
+        <audio ref={preRef} preload="auto" />
       </div>
     </div>
   )
