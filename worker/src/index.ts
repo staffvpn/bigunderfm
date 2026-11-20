@@ -361,113 +361,6 @@ async function healthCheck(env: Env): Promise<void> {
   }
 }
 
-// ---------- visual cards ----------
-
-const APP_URL = 'https://bigunderfm.pages.dev'
-const CARD_TYPES = new Set(['now', 'show', 'guest', 'select'])
-const CARD_FORMATS = new Set(['feed', 'square', 'story', 'wide'])
-
-async function channelId(env: Env): Promise<string> {
-  const row = await env.DB.prepare("select value from settings where key = 'channel_id'").first<{ value: string }>()
-  return row?.value || '@bigunderparty'
-}
-
-/** Sends a PNG to Telegram: to the channel as a photo, to an admin as a file (full quality). */
-async function sendCardImage(env: Env, png: Blob, target: 'me' | 'channel', userId: string, caption: string): Promise<string | null> {
-  const form = new FormData()
-  const isChannel = target === 'channel'
-  form.append('chat_id', isChannel ? await channelId(env) : userId)
-  form.append(isChannel ? 'photo' : 'document', png, 'bigunder-card.png')
-  if (caption) form.append('caption', caption.slice(0, 1000))
-  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${isChannel ? 'sendPhoto' : 'sendDocument'}`, { method: 'POST', body: form })
-  const data = (await res.json().catch(() => null)) as { ok?: boolean; description?: string } | null
-  if (data?.ok) return null
-  const why = data?.description ?? `HTTP ${res.status}`
-  if (isChannel && /chat not found|not enough rights|administrator|member/i.test(why)) {
-    return 'Бот не может писать в канал. Добавь @bigunderadiobot в администраторы канала с правом публикации.'
-  }
-  if (!isChannel && /chat not found|blocked|initiate/i.test(why)) return 'Открой чат с ботом и нажми Start, потом попробуй снова.'
-  return `Telegram не принял картинку: ${why}`
-}
-
-async function handleListCards(env: Env): Promise<Response> {
-  const { results } = await env.DB.prepare('select id, type, format, title, r2_key, created_at, sent_at from cards order by created_at desc limit 40').all<{
-    id: string
-    type: string
-    format: string
-    title: string
-    r2_key: string
-    created_at: string
-    sent_at: string | null
-  }>()
-  return json({
-    channel: await channelId(env),
-    cards: results.map((r) => ({ id: r.id, type: r.type, format: r.format, title: r.title, url: `${APP_URL}/media/${r.r2_key}`, createdAt: r.created_at, sentAt: r.sent_at })),
-  })
-}
-
-async function handleSaveCard(req: Request, env: Env, auth: Claims): Promise<Response> {
-  const form = await req.formData().catch(() => null)
-  const file = form?.get('image')
-  if (!form || !isFile(file) || file.size === 0) return json({ error: 'Нет картинки' }, 400)
-  if (file.size > 9 * 1024 * 1024) return json({ error: 'Картинка больше 9 МБ' }, 400)
-  const type = String(form.get('type') ?? '')
-  const format = String(form.get('format') ?? '')
-  if (!CARD_TYPES.has(type) || !CARD_FORMATS.has(format)) return json({ error: 'Неизвестный тип или формат' }, 400)
-  const title = String(form.get('title') ?? '').slice(0, 120)
-  const caption = String(form.get('caption') ?? '')
-  const target = String(form.get('target') ?? 'save')
-  const id = crypto.randomUUID()
-  const key = `cards/${id}.png`
-  const png = new Blob([await file.arrayBuffer()], { type: 'image/png' })
-  await env.MEDIA.put(key, png, { httpMetadata: { contentType: 'image/png', cacheControl: 'public, max-age=31536000, immutable' } })
-  const now = new Date().toISOString()
-  await env.DB.prepare('insert into cards (id, type, format, title, r2_key, created_at) values (?, ?, ?, ?, ?, ?)').bind(id, type, format, title, key, now).run()
-  if (target === 'me' || target === 'channel') {
-    const err = await sendCardImage(env, png, target, auth.sub, caption)
-    if (err) return json({ error: err, id }, 502)
-    if (target === 'channel') await env.DB.prepare('update cards set sent_at = ? where id = ?').bind(now, id).run()
-  }
-  return json({ ok: true, id, url: `${APP_URL}/media/${key}` })
-}
-
-async function handleResendCard(req: Request, env: Env, auth: Claims, id: string): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { target?: string; caption?: string } | null
-  const target = body?.target === 'channel' ? 'channel' : 'me'
-  const row = await env.DB.prepare('select r2_key from cards where id = ?').bind(id).first<{ r2_key: string }>()
-  if (!row) return json({ error: 'Карточка не найдена' }, 404)
-  const obj = await env.MEDIA.get(row.r2_key)
-  if (!obj) return json({ error: 'Файл карточки пропал' }, 404)
-  const png = new Blob([await obj.arrayBuffer()], { type: 'image/png' })
-  const err = await sendCardImage(env, png, target, auth.sub, String(body?.caption ?? ''))
-  if (err) return json({ error: err }, 502)
-  if (target === 'channel') await env.DB.prepare('update cards set sent_at = ? where id = ?').bind(new Date().toISOString(), id).run()
-  return json({ ok: true })
-}
-
-async function handleDeleteCard(env: Env, id: string): Promise<Response> {
-  const row = await env.DB.prepare('select r2_key from cards where id = ?').bind(id).first<{ r2_key: string }>()
-  if (!row) return json({ ok: true })
-  await env.MEDIA.delete(row.r2_key)
-  await env.DB.prepare('delete from cards where id = ?').bind(id).run()
-  return json({ ok: true })
-}
-
-const DAY_SHORT = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
-
-/** After a new show is added: the bot offers the admins a ready card for it. */
-async function offerShowCard(env: Env, slotId: string, title: string, days: string, start: number): Promise<void> {
-  const when = `${[...days].map((d) => DAY_SHORT[Number(d)]).join(', ')} ${String(Math.floor(start / 60)).padStart(2, '0')}:${String(start % 60).padStart(2, '0')}`
-  const { results } = await env.DB.prepare('select telegram_user_id from admins').all<{ telegram_user_id: number }>()
-  for (const a of results) {
-    await callTelegram(env, 'sendMessage', {
-      chat_id: Number(a.telegram_user_id),
-      text: `Новое шоу в сетке: ${title}, ${when}.\nКарточка для анонса готова: открой, проверь и отправь в канал.`,
-      reply_markup: { inline_keyboard: [[{ text: 'Открыть карточку', web_app: { url: `${APP_URL}/?card=show&slot=${encodeURIComponent(slotId)}` } }]] },
-    }).catch(() => null)
-  }
-}
-
 async function purgeTrash(env: Env): Promise<void> {
   const before = new Date(Date.now() - TRASH_DAYS * 86_400_000).toISOString()
   const { results } = await env.DB.prepare('select id, row_json from track_trash where deleted_at < ? limit 50').bind(before).all<{ id: string; row_json: string }>()
@@ -800,7 +693,6 @@ async function handleCreateShow(req: Request, env: Env): Promise<Response> {
   ])
   await replanFuture(env, Date.now())
   await dropProgramCache(env)
-  await offerShowCard(env, `slot-${key}`, show.title, show.days, show.start).catch(() => {})
   return json({ ok: true, id: `slot-${key}` })
 }
 
@@ -1330,12 +1222,6 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     if (showSlot && m === 'PUT') return handleSetShow(req, env, showSlot[1])
     if (showSlot && m === 'DELETE') return handleDeleteShow(env, showSlot[1])
     if (m === 'POST' && path === '/api/admin/shows') return handleCreateShow(req, env)
-    if (m === 'GET' && path === '/api/admin/cards') return handleListCards(env)
-    if (m === 'POST' && path === '/api/admin/cards') return handleSaveCard(req, env, auth)
-    const cardSend = path.match(/^\/api\/admin\/cards\/([0-9a-f-]{36})\/send$/)
-    if (cardSend && m === 'POST') return handleResendCard(req, env, auth, cardSend[1])
-    const cardId = path.match(/^\/api\/admin\/cards\/([0-9a-f-]{36})$/)
-    if (cardId && m === 'DELETE') return handleDeleteCard(env, cardId[1])
     if (m === 'POST' && path === '/api/admin/timers') return handleAddTimer(req, env)
     const timerId = path.match(/^\/api\/admin\/timers\/(\d+)$/)
     if (timerId && m === 'DELETE') return handleDeleteTimer(env, Number(timerId[1]))

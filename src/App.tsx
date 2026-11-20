@@ -6,11 +6,10 @@ import { RadioScreen } from './screens/RadioScreen'
 import { AdminLibrary } from './screens/AdminLibrary'
 import { AdminRadioControls } from './screens/AdminRadioControls'
 import { GridScreen } from './screens/GridScreen'
-import { AdminCards } from './screens/AdminCards'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Splash } from './components/Splash'
 
-type Tab = 'radio' | 'grid' | 'library' | 'controls' | 'cards'
+type Tab = 'radio' | 'grid' | 'library' | 'controls'
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false)
@@ -23,8 +22,6 @@ export default function App() {
     joinAppPresence()
     authenticate().then((result) => {
       setIsAdmin(result.isAdmin)
-      // opened from the bot's "Открыть карточку" button
-      if (result.isAdmin && new URLSearchParams(location.search).get('card')) setTab('cards')
       setReady(true)
     })
   }, [])
@@ -71,18 +68,6 @@ export default function App() {
           </div>
         </ErrorBoundary>
       )}
-      {tab === 'cards' && isAdmin && (
-        <ErrorBoundary label="Карточки">
-          <div className="bfm-admin">
-            <header className="bfm__head">
-              BIGUNDER FM
-              <br />
-              Карточки
-            </header>
-            <AdminCards />
-          </div>
-        </ErrorBoundary>
-      )}
       {tab === 'grid' && (
         <ErrorBoundary label="Сетка">
           <GridScreen />
@@ -99,11 +84,6 @@ export default function App() {
         {isAdmin && (
           <button className={tab === 'library' ? 'is-active' : ''} onClick={() => setTab('library')}>
             Библиотека
-          </button>
-        )}
-        {isAdmin && (
-          <button className={tab === 'cards' ? 'is-active' : ''} onClick={() => setTab('cards')}>
-            Карточки
           </button>
         )}
         {isAdmin && (
