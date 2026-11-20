@@ -138,6 +138,8 @@ interface Planner {
   recent: RPlayed[]
   lastPlayed: Map<string, number>
   autoHits: Set<string>
+  /** Seeded randomness for the emergency plan (the same for every listener). */
+  rng?: () => number
 }
 
 async function loadPlanner(env: Env, now: number): Promise<Planner> {
@@ -174,6 +176,7 @@ function pickAt(p: Planner, at: number): Pick | null {
     lastPlayed: p.lastPlayed,
     autoHitIds: p.autoHits,
     now: at,
+    rng: p.rng,
   })
 }
 
@@ -533,11 +536,79 @@ export function airLabel(slot: { folderId: string; title: string }, names: Recor
   return template.replace(/\{DAY\}/gi, weekday)
 }
 
+/** Small deterministic random generator (mulberry32). */
+function seeded(seed: number): () => number {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/**
+ * The air when the database refuses to save a plan (for example the account's
+ * daily write limit is used up): the same rotation, worked out in memory from
+ * a fixed starting point and a fixed seed, so every listener who asks gets the
+ * very same timeline and the radio keeps playing in sync. Nothing is written.
+ */
+export async function emergencyItems(env: Env, now: number): Promise<ItemRow[]> {
+  const tailRow = await env.DB.prepare('select ends_at from program order by starts_at desc limit 1').first<{ ends_at: string }>()
+  const tail = tailRow ? Date.parse(tailRow.ends_at) : 0
+  const SIX_H = 6 * 3600_000
+  // start where the saved plan ends; if that is long ago, at the last 6-hour mark
+  const anchor = tail > now - SIX_H && tail <= now + 60_000 ? tail : Math.floor(now / SIX_H) * SIX_H
+  const planner = await loadPlanner(env, anchor)
+  planner.rng = seeded(Math.floor(anchor / 1000))
+  const rows: Planned[] = []
+  let cursor = anchor
+  while (cursor < now + 3600_000 && rows.length < 400) {
+    const next = planOne(planner, cursor)
+    if (!next) break
+    rows.push(next)
+    cursor = next.endsAt
+  }
+  const ahead = rows.filter((r) => r.endsAt > now).slice(0, 6)
+  if (ahead.length === 0) return []
+  const ids = [...new Set(ahead.map((r) => r.trackId))]
+  const { results } = await env.DB.prepare(
+    `select id, title, artist, file_path, duration_seconds, created_at from tracks where id in (${ids.map(() => '?').join(',')})`,
+  )
+    .bind(...ids)
+    .all<{ id: string; title: string; artist: string; file_path: string; duration_seconds: number; created_at: string }>()
+  const byId = new Map(results.map((t) => [t.id, t]))
+  return ahead.flatMap((r) => {
+    const t = byId.get(r.trackId)
+    if (!t) return []
+    return [
+      {
+        id: -Math.floor(r.startsAt / 1000), // stable, never collides with saved rows
+        track_id: r.trackId,
+        starts_at: new Date(r.startsAt).toISOString(),
+        ends_at: new Date(r.endsAt).toISOString(),
+        kind: r.kind,
+        title: t.title,
+        artist: t.artist,
+        file_path: t.file_path,
+        duration_seconds: t.duration_seconds,
+        created_at: t.created_at,
+      } as ItemRow,
+    ]
+  })
+}
+
 export async function programView(env: Env, now: number): Promise<ProgramView> {
   let items = await loadItems(env, now)
   if (items.length === 0 || Date.parse(items[0].starts_at) > now + 5000) {
-    await planAhead(env, now, items.length === 0)
-    items = await loadItems(env, now)
+    try {
+      await planAhead(env, now, items.length === 0)
+      items = await loadItems(env, now)
+    } catch {
+      // the plan could not be saved: keep the air going from memory
+    }
+    if (items.length === 0 || Date.parse(items[0].starts_at) > now + 5000) items = await emergencyItems(env, now)
   }
   const [slotsRes, showsRes, vps, tunnelRow] = await Promise.all([ // tunnelRow: the air_names setting
     env.DB.prepare('select id, folder_id, title, days, start_minute, end_minute, priority from schedule_slots').all<SlotRow>(),

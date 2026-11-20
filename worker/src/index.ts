@@ -19,6 +19,7 @@ import {
   removeUpcoming,
   replanFuture,
   skipCurrent,
+  emergencyItems,
 } from './program'
 
 export { Presence } from './presence'
@@ -328,7 +329,12 @@ async function airProblem(env: Env): Promise<string | null> {
   } catch {
     return 'База данных радио не отвечает (Cloudflare D1).'
   }
-  if (!row) return 'Эфир не спланирован: сейчас в сетке ничего нет. Проверь, что в папках есть включённые треки.'
+  if (!row) {
+    const backup = await emergencyItems(env, Date.now()).catch(() => [])
+    if (backup.length > 0)
+      return 'База Cloudflare не сохраняет сетку эфира (скорее всего, кончился дневной лимит записей D1 на аккаунте). Радио играет в запасном режиме, лайки и статистика сейчас не сохраняются.'
+    return 'Эфир не спланирован: сейчас в сетке ничего нет. Проверь, что в папках есть включённые треки.'
+  }
   try {
     const obj = await env.MEDIA.head(row.file_path)
     if (!obj) return `Файл текущего трека не найден в хранилище: ${row.file_path}`
@@ -348,9 +354,15 @@ async function healthCheck(env: Env): Promise<void> {
   if (problem && (problem !== prevText || Date.now() - prevAt > HEALTH_REPEAT_MS)) text = `BIGUNDER FM: проблема с эфиром.\n${problem}`
   else if (!problem && prevText) text = 'BIGUNDER FM: эфир снова в порядке.'
   if (!text) return
-  await env.DB.prepare('insert into settings (key, value) values (?, ?) on conflict(key) do update set value = excluded.value')
-    .bind(HEALTH_KEY, problem ? `${Date.now()}|${problem}` : '0|')
-    .run()
+  try {
+    await env.DB.prepare('insert into settings (key, value) values (?, ?) on conflict(key) do update set value = excluded.value')
+      .bind(HEALTH_KEY, problem ? `${Date.now()}|${problem}` : '0|')
+      .run()
+  } catch {
+    // the database takes no writes right now: still tell the admins, but at
+    // most once an hour (the check runs every 5 minutes and can't remember)
+    if (new Date().getUTCMinutes() >= 5) return
+  }
   const { results } = await env.DB.prepare('select telegram_user_id from admins').all<{ telegram_user_id: number }>()
   for (const a of results) {
     try {
