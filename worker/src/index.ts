@@ -322,9 +322,9 @@ async function airProblem(env: Env): Promise<string | null> {
   let row: { file_path: string } | null
   try {
     row = await env.DB.prepare(
-      'select t.file_path from program p join tracks t on t.id = p.track_id where p.starts_at <= ? and p.ends_at > ? limit 1',
+      'select t.file_path from program p join tracks t on t.id = p.track_id where p.starts_at > ? and p.starts_at <= ? and p.ends_at > ? order by p.starts_at desc limit 1',
     )
-      .bind(now, now)
+      .bind(new Date(Date.now() - 6 * 3600_000).toISOString(), now, now)
       .first<{ file_path: string }>()
   } catch {
     return 'База данных радио не отвечает (Cloudflare D1).'

@@ -221,7 +221,9 @@ async function pendingTimers(env: Env, from: number, to: number): Promise<Occurr
     env.DB.prepare(
       'select tm.track_id, tm.fire_at, tm.minute, t.duration_seconds from track_timers tm join tracks t on t.id = tm.track_id where t.is_enabled = 1',
     ),
-    env.DB.prepare('select track_id, timer_at from program where timer_at is not null and timer_at > ?').bind(
+    // bounded by starts_at (indexed): the timer column alone meant reading the whole week of air
+    env.DB.prepare('select track_id, timer_at from program where starts_at > ? and timer_at is not null and timer_at > ?').bind(
+      new Date(from - 2 * 86_400_000).toISOString(),
       new Date(from - 86_400_000).toISOString(),
     ),
   ])
@@ -441,9 +443,9 @@ export async function cutDeadCurrent(env: Env, now: number): Promise<boolean> {
   const iso = new Date(now).toISOString()
   const row = await env.DB.prepare(
     `select p.id, t.id as tid, t.is_enabled from program p left join tracks t on t.id = p.track_id
-     where p.starts_at <= ? and p.ends_at > ? order by p.starts_at desc limit 1`,
+     where p.starts_at > ? and p.starts_at <= ? and p.ends_at > ? order by p.starts_at desc limit 1`,
   )
-    .bind(iso, iso)
+    .bind(new Date(now - 6 * 3600_000).toISOString(), iso, iso)
     .first<{ id: number; tid: string | null; is_enabled: number | null }>()
   if (!row || (row.tid && row.is_enabled)) return false
   await env.DB.prepare('update program set ends_at = ? where id = ?').bind(iso, row.id).run()
@@ -493,9 +495,10 @@ async function loadItems(env: Env, now: number): Promise<ItemRow[]> {
   const { results } = await env.DB.prepare(
     `select p.id, p.track_id, p.starts_at, p.ends_at, p.kind, t.title, t.artist, t.file_path, t.duration_seconds, t.created_at
      from program p join tracks t on t.id = p.track_id
-     where p.ends_at > ? and t.is_enabled = 1 order by p.starts_at limit 6`,
+     where p.starts_at > ? and p.ends_at > ? and t.is_enabled = 1 order by p.starts_at limit 6`,
   )
-    .bind(new Date(now).toISOString())
+    // starts_at is indexed: only the last few hours are looked at, not the whole week
+    .bind(new Date(now - 6 * 3600_000).toISOString(), new Date(now).toISOString())
     .all<ItemRow>()
   return results
 }
@@ -647,9 +650,9 @@ export async function programNow(env: Env, now: number): Promise<{ trackId: stri
   const iso = new Date(now).toISOString()
   const row = await env.DB.prepare(
     `select p.track_id, p.starts_at, p.kind, t.title, t.artist from program p join tracks t on t.id = p.track_id
-     where p.starts_at <= ? and p.ends_at > ? order by p.starts_at desc limit 1`,
+     where p.starts_at > ? and p.starts_at <= ? and p.ends_at > ? order by p.starts_at desc limit 1`,
   )
-    .bind(iso, iso)
+    .bind(new Date(now - 6 * 3600_000).toISOString(), iso, iso)
     .first<{ track_id: string; starts_at: string; kind: string; title: string; artist: string }>()
   return row ? { trackId: row.track_id, artist: row.artist, title: row.title, kind: row.kind, startedAt: row.starts_at } : null
 }
