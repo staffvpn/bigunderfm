@@ -21,6 +21,49 @@ interface R2Bucket {
 }
 interface Env {
   MEDIA: R2Bucket
+  ASSETS: { fetch(input: Request | string): Promise<Response> }
+}
+
+/**
+ * Tracks with a voice intro baked in live in the site's own static files
+ * (public/intro, built by scripts/bake_intros.py), not in R2. They are served
+ * here so the player keeps one media URL scheme and gets Range support, which
+ * iOS needs to play audio at all.
+ */
+async function serveIntro(ctx: { request: Request; env: Env }, key: string): Promise<Response> {
+  const name = key.slice('intro/'.length)
+  if (!/^[A-Za-z0-9-]+\.mp3$/.test(name)) return new Response('not found', { status: 404 })
+  const asset = await ctx.env.ASSETS.fetch(new URL('/intro/' + name, ctx.request.url).toString())
+  if (!asset.ok) return new Response('not found', { status: 404 })
+  const buf = await asset.arrayBuffer()
+  const size = buf.byteLength
+  const headers = new Headers({
+    'Content-Type': 'audio/mpeg',
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'public, max-age=86400',
+    'Access-Control-Allow-Origin': '*',
+  })
+  const m = /^bytes=(\d*)-(\d*)$/.exec(ctx.request.headers.get('range') ?? '')
+  if (m && (m[1] || m[2])) {
+    let start: number
+    let end: number
+    if (!m[1]) {
+      start = Math.max(size - Number(m[2]), 0)
+      end = size - 1
+    } else {
+      start = Number(m[1])
+      end = m[2] ? Math.min(Number(m[2]), size - 1) : size - 1
+    }
+    if (start >= size || start > end) {
+      headers.set('Content-Range', `bytes */${size}`)
+      return new Response(null, { status: 416, headers })
+    }
+    headers.set('Content-Range', `bytes ${start}-${end}/${size}`)
+    headers.set('Content-Length', String(end - start + 1))
+    return new Response(buf.slice(start, end + 1), { status: 206, headers })
+  }
+  headers.set('Content-Length', String(size))
+  return new Response(buf, { status: 200, headers })
 }
 
 function contentTypeFor(key: string, stored?: string): string {
@@ -40,6 +83,7 @@ export const onRequestGet = async (ctx: { request: Request; env: Env; params: { 
   const parts = ctx.params.path
   const key = Array.isArray(parts) ? parts.map(decodeURIComponent).join('/') : decodeURIComponent(parts ?? '')
   if (!key) return new Response('not found', { status: 404 })
+  if (key.startsWith('intro/')) return serveIntro(ctx, key)
 
   const rangeHeader = ctx.request.headers.get('range')
   const obj = await ctx.env.MEDIA.get(key, rangeHeader ? { range: ctx.request.headers } : undefined)

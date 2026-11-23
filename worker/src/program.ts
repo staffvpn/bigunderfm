@@ -489,11 +489,18 @@ type ItemRow = {
   file_path: string
   duration_seconds: number
   created_at: string
+  /** A copy of the track with a voice intro over its opening (public/intro), if one was made. */
+  intro_path?: string | null
+}
+
+/** Every third airing of a track that has a voice intro plays the intro copy, so facts come up now and then, never back to back. */
+function airedFile(r: ItemRow): string {
+  return r.intro_path && r.id > 0 && r.id % 3 === 0 ? r.intro_path : r.file_path
 }
 
 async function loadItems(env: Env, now: number): Promise<ItemRow[]> {
   const { results } = await env.DB.prepare(
-    `select p.id, p.track_id, p.starts_at, p.ends_at, p.kind, t.title, t.artist, t.file_path, t.duration_seconds, t.created_at
+    `select p.id, p.track_id, p.starts_at, p.ends_at, p.kind, t.title, t.artist, t.file_path, t.duration_seconds, t.created_at, t.intro_path
      from program p join tracks t on t.id = p.track_id
      where p.starts_at > ? and p.ends_at > ? and t.is_enabled = 1 order by p.starts_at limit 6`,
   )
@@ -640,7 +647,7 @@ export async function programView(env: Env, now: number): Promise<ProgramView> {
       endsAt: r.ends_at,
       kind: r.kind as PlayKind,
       isNew: now - (Date.parse(r.created_at) || 0) < NEW_FOR_MS && r.kind !== 'jingle',
-      track: { id: r.track_id, title: r.title, artist: r.artist, filePath: r.file_path, durationSeconds: r.duration_seconds },
+      track: { id: r.track_id, title: r.title, artist: r.artist, filePath: airedFile(r), durationSeconds: r.duration_seconds },
     })),
   }
 }
