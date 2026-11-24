@@ -1,0 +1,43 @@
+name: Probe music APIs
+on:
+  push:
+    branches: [main]
+    paths: ['probe/request']
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Query
+        run: |
+          set +e
+          mkdir -p probe/out
+          for host in https://api.audius.co https://discoveryprovider.audius.co; do
+            n=$(echo $host | sed 's#https://##')
+            curl -s -m 30 -D probe/out/$n.headers "$host/v1/tracks/trending?genre=Hip-Hop%2FRap&time=week&app_name=BIGUNDERFM" -o probe/out/$n.trending.json
+            echo "$host $(head -c 300 probe/out/$n.trending.json)" >> probe/out/summary.txt
+          done
+          curl -s -m 30 "https://api.audius.co" -o probe/out/hosts.json
+          python3 - <<'PY'
+          import json,glob
+          for f in glob.glob('probe/out/*.trending.json'):
+              try:
+                  d=json.load(open(f))['data']
+                  t=d[0]
+                  json.dump({'count':len(d),'keys':sorted(t.keys()),'sample':{k:t.get(k) for k in ['id','title','genre','duration','play_count','favorite_count','mood','tags','permalink','is_streamable','is_downloadable','stream_conditions']},'user':{k:t['user'].get(k) for k in ['name','handle']},'list':[(x['user']['name'],x['title'],x['genre'],x['duration'],x['play_count']) for x in d[:25]]},open(f+'.short','w'),ensure_ascii=False,indent=1)
+              except Exception as e:
+                  open(f+'.short','w').write('ERR '+str(e))
+          PY
+          # streaming check: headers of first track stream
+          id=$(python3 -c "import json;print(json.load(open('probe/out/discoveryprovider.audius.co.trending.json'))['data'][0]['id'])" 2>/dev/null || python3 -c "import json;print(json.load(open('probe/out/api.audius.co.trending.json'))['data'][0]['id'])")
+          for host in https://api.audius.co https://discoveryprovider.audius.co; do
+            curl -s -m 30 -I -L -H "Range: bytes=0-1000" -H "Origin: https://bigunderfm.pages.dev" "$host/v1/tracks/$id/stream?app_name=BIGUNDERFM" >> probe/out/stream_headers.txt; echo ---- >> probe/out/stream_headers.txt
+          done
+          curl -s -m 30 -I -H "Origin: https://bigunderfm.pages.dev" "https://api.audius.co/v1/tracks/trending?app_name=BIGUNDERFM" > probe/out/cors_headers.txt
+          rm -f probe/out/*.trending.json
+      - name: Commit
+        run: |
+          git config user.name "bigunderfm-probe"; git config user.email "probe@users.noreply.github.com"
+          git add probe/out; git commit -m "Probe results" || exit 0; git push
