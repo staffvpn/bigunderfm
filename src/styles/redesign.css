@@ -45,6 +45,16 @@
 /* ---------- main ---------- */
 .bfm-main {
   overflow: hidden;
+  position: relative;
+}
+/* Winter: snow over the header and the photo, above them, below nothing you tap. */
+.bfm__snow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  pointer-events: none;
+  z-index: 2;
 }
 .bfm__photo {
   flex: 1 1 0;

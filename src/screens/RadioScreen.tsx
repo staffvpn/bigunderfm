@@ -10,6 +10,7 @@ import { OnAir } from '../components/OnAir'
 import { ShowCountdown } from '../components/ShowCountdown'
 import { PauseIcon, PlayIcon } from '../components/Icons'
 import { Socials } from '../components/Socials'
+import { Snow } from '../components/Snow'
 import { fetchPlaylist, fetchUpNextFilePath, toPlaylistTracks, type PlaylistEntry } from '../lib/tracks'
 import { afterItem, fetchProgram, isLeftBehind, stationNow, tuneIn, type Program, type ProgramItem, type TuneIn } from '../lib/program'
 
@@ -104,6 +105,7 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
   // stable "vibe" that outlasts any one track), per explicit request.
   const [background, setBackground] = useState<BackgroundItem | undefined>(() => pickNextBackground())
   const audioRef = useRef<HTMLAudioElement>(null)
+  const photoRef = useRef<HTMLDivElement>(null)
   // Second player, for radio-style joins: it loads the next jingle ahead of
   // time and plays it over the end of the track, while the main player
   // starts the following track under the jingle's tail. Tracks themselves
@@ -1044,13 +1046,14 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
         <br />
         Independent Hip-Hop Radio
       </header>
-      <div className="bfm__photo" style={background?.type === 'image' ? { backgroundImage: `url(${background.src})` } : undefined}>
+      <div ref={photoRef} className="bfm__photo" style={background?.type === 'image' ? { backgroundImage: `url(${background.src})` } : undefined}>
         {background?.type === 'video' && (
           // Muted + playsInline + autoPlay is what lets mobile WebViews
           // (Telegram's included) autoplay a video at all.
           <video key={background.src} src={background.src} autoPlay loop muted playsInline aria-hidden="true" />
         )}
       </div>
+      <Snow until={photoRef} />
       <div className="bfm__now">
         <span className="bfm__label">
           <OnAir />
