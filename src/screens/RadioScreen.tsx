@@ -1052,19 +1052,11 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
         )}
       </div>
       <div className="bfm__now">
-        <div className="bfm__nowline">
-          <span className="bfm__label">
-            <OnAir />
-            В эфире{airName ? ` · ${airName}` : ''}
-            {isNewTrack ? ' · Новинка' : ''}
-          </span>
-          {program?.listenersTotal ? (
-            <span className="bfm__label bfm__with">
-              <i className="bfm__dot" aria-hidden="true" />
-              <b>{program.listenersTotal}</b> с нами
-            </span>
-          ) : null}
-        </div>
+        <span className="bfm__label">
+          <OnAir />
+          В эфире{airName ? ` · ${airName}` : ''}
+          {isNewTrack ? ' · Новинка' : ''}
+        </span>
         {/* One line each, shrunk to fit: the photo keeps its height whatever the names. */}
         <ScrambleTitle className="bfm__artist" text={nowPlaying?.artist || '—'} min={18} />
         <FitTitle key={nowPlaying?.title ?? ''} className="bfm__title bfm__title--in" text={showConnecting ? 'Подключение...' : (nowPlaying?.title ?? 'Загрузка...')} min={12} />

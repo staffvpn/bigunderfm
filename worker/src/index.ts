@@ -344,19 +344,6 @@ async function airProblem(env: Env): Promise<string | null> {
   return null
 }
 
-/**
- * The number shown as "с нами" on the main screen: a random 1-500, picked
- * once an hour by the cron (the owner's call), so the air never computes it.
- */
-async function countListeners(env: Env): Promise<void> {
-  const n = 1 + Math.floor(Math.random() * 500)
-  await env.DB.prepare(
-    "insert into settings (key, value) values ('listeners_total', ?) on conflict(key) do update set value = excluded.value",
-  )
-    .bind(String(n))
-    .run()
-}
-
 async function healthCheck(env: Env): Promise<void> {
   const problem = await airProblem(env)
   const prev = await env.DB.prepare('select value from settings where key = ?').bind(HEALTH_KEY).first<{ value: string }>()
@@ -1474,7 +1461,6 @@ export default {
     ctx.waitUntil(sampleListeners(env))
     ctx.waitUntil(sendDueReminders(env))
     if (new Date().getUTCMinutes() === 7) ctx.waitUntil(purgeTrash(env))
-    if (new Date().getUTCMinutes() === 9) ctx.waitUntil(countListeners(env))
     if (new Date().getUTCMinutes() % 5 === 2) ctx.waitUntil(healthCheck(env))
   },
 }

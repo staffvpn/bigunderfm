@@ -41,36 +41,6 @@
 .bfm__label {
   font-size: 11px;
 }
-/* The on-air line: what is playing on the left, how many people are with us on the right. */
-.bfm__nowline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  line-height: 1;
-}
-.bfm__nowline .bfm__label {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.bfm__with {
-  flex: none;
-  gap: 5px;
-  font-variant-numeric: tabular-nums;
-}
-.bfm__with b {
-  font-weight: 900;
-}
-.bfm__dot {
-  width: 6px;
-  height: 6px;
-  margin-right: 1px;
-  background: var(--blue);
-}
 
 /* ---------- main ---------- */
 .bfm-main {
