@@ -1,0 +1,286 @@
+{
+ "count": 100,
+ "keys": [
+  "access",
+  "access_authorities",
+  "ai_attribution_user_id",
+  "album_backlink",
+  "allowed_api_keys",
+  "artists",
+  "artwork",
+  "audio_analysis_error_count",
+  "audio_upload_id",
+  "blocknumber",
+  "bpm",
+  "collaborators",
+  "comment_count",
+  "comments_disabled",
+  "copyright_line",
+  "cover_art",
+  "cover_art_sizes",
+  "cover_original_artist",
+  "cover_original_song_title",
+  "create_date",
+  "created_at",
+  "credits_splits",
+  "ddex_app",
+  "ddex_release_ids",
+  "description",
+  "download",
+  "download_conditions",
+  "duration",
+  "favorite_count",
+  "feedback_requested",
+  "feedback_requested_at",
+  "field_visibility",
+  "followee_favorites",
+  "followee_reposts",
+  "genre",
+  "has_current_user_reposted",
+  "has_current_user_saved",
+  "id",
+  "indirect_resource_contributors",
+  "is_available",
+  "is_custom_bpm",
+  "is_custom_musical_key",
+  "is_delete",
+  "is_download_gated",
+  "is_downloadable",
+  "is_original_available",
+  "is_owned_by_user",
+  "is_scheduled_release",
+  "is_stream_gated",
+  "is_streamable",
+  "is_unlisted",
+  "isrc",
+  "iswc",
+  "license",
+  "mood",
+  "musical_key",
+  "orig_file_cid",
+  "orig_filename",
+  "parental_warning_type",
+  "pending_collaborators",
+  "permalink",
+  "pinned_comment_id",
+  "play_count",
+  "playlists_containing_track",
+  "playlists_previously_containing_track",
+  "preview",
+  "preview_cid",
+  "preview_start_seconds",
+  "producer_copyright_line",
+  "release_date",
+  "remix_of",
+  "repost_count",
+  "resource_contributors",
+  "rights_controller",
+  "slug",
+  "stem_of",
+  "stream",
+  "stream_conditions",
+  "tags",
+  "title",
+  "track_cid",
+  "track_id",
+  "track_segments",
+  "updated_at",
+  "user",
+  "user_id"
+ ],
+ "sample": {
+  "id": "rKQXAwV",
+  "title": "smoothies",
+  "genre": "Hip-Hop/Rap",
+  "duration": 132,
+  "play_count": 604,
+  "favorite_count": 62,
+  "mood": "Romantic",
+  "tags": null,
+  "permalink": "/betty.bl00p/smoothies",
+  "is_streamable": true,
+  "is_downloadable": false,
+  "stream_conditions": null
+ },
+ "user": {
+  "name": "𝕭 𝕰 𝕿 𝕿 𝖄",
+  "handle": "betty.bl00p"
+ },
+ "list": [
+  [
+   "𝕭 𝕰 𝕿 𝕿 𝖄",
+   "smoothies",
+   "Hip-Hop/Rap",
+   132,
+   604
+  ],
+  [
+   "I.R.T Beats",
+   "RIDE | Melodic Trap Beat ",
+   "Hip-Hop/Rap",
+   154,
+   1029
+  ],
+  [
+   "Gesd1",
+   "GESD1 ",
+   "Hip-Hop/Rap",
+   136,
+   79
+  ],
+  [
+   "Smiz The Cryptokid ",
+   "4. Death By Starvation ",
+   "Hip-Hop/Rap",
+   141,
+   33
+  ],
+  [
+   "Smiz The Cryptokid ",
+   "1. I AM vs Ai (Single)",
+   "Hip-Hop/Rap",
+   56,
+   31
+  ],
+  [
+   "I.R.T Beats",
+   "DOWN BAD | Melodic Guitar Trap Beat ",
+   "Hip-Hop/Rap",
+   185,
+   8
+  ],
+  [
+   "Siren Sirezze",
+   "On The Weekends Feat. Legend & Keontaie Watson ",
+   "Hip-Hop/Rap",
+   151,
+   42
+  ],
+  [
+   "Scan-N-Kutt",
+   "Feminist Egalitarian",
+   "Hip-Hop/Rap",
+   158,
+   37
+  ],
+  [
+   "MAZZI METR33  (NEW YORK.NY) 🌎",
+   "MY BUDDY FREESTYLE",
+   "Hip-Hop/Rap",
+   163,
+   83
+  ],
+  [
+   "mrnes",
+   "im Lost  ",
+   "Hip-Hop/Rap",
+   149,
+   258
+  ],
+  [
+   "Acoustic Chemist",
+   "Scan-N-Kutt",
+   "Hip-Hop/Rap",
+   125,
+   23
+  ],
+  [
+   "Acoustic Chemist",
+   "In the Lab (electronic remix)",
+   "Hip-Hop/Rap",
+   71,
+   13
+  ],
+  [
+   "Acoustic Chemist",
+   "Life of a Chemist (remix)",
+   "Hip-Hop/Rap",
+   137,
+   11
+  ],
+  [
+   "Acoustic Chemist",
+   "Molecules (electronic remix)",
+   "Hip-Hop/Rap",
+   121,
+   9
+  ],
+  [
+   "Acoustic Chemist",
+   "Cooking Up Compounds (house remix)",
+   "Hip-Hop/Rap",
+   135,
+   8
+  ],
+  [
+   "Acoustic Chemist",
+   "In the Lab (house remix}",
+   "Hip-Hop/Rap",
+   63,
+   6
+  ],
+  [
+   "Acoustic Chemist",
+   "Analytical",
+   "Hip-Hop/Rap",
+   132,
+   7
+  ],
+  [
+   "DUAN GOTTi",
+   "YOUNG NUDY - YA DIG (DUAN GOTTI EDIT)",
+   "Hip-Hop/Rap",
+   181,
+   3
+  ],
+  [
+   "ZaireHuruku",
+   "I will always win ",
+   "Hip-Hop/Rap",
+   904,
+   44
+  ],
+  [
+   "J🎤MMY STR🎹🎹TS",
+   "Noahs Heart",
+   "Hip-Hop/Rap",
+   277,
+   6
+  ],
+  [
+   "Acoustic Chemist",
+   "In the Lab (dubstep remix)",
+   "Hip-Hop/Rap",
+   58,
+   3
+  ],
+  [
+   "Acoustic Chemist",
+   "Molecules",
+   "Hip-Hop/Rap",
+   136,
+   11
+  ],
+  [
+   "Acoustic Chemist",
+   "RNA",
+   "Hip-Hop/Rap",
+   144,
+   6
+  ],
+  [
+   "Acoustic Chemist",
+   "In the Lab",
+   "Hip-Hop/Rap",
+   158,
+   7
+  ],
+  [
+   "Acoustic Chemist",
+   "Life of a Chemist",
+   "Hip-Hop/Rap",
+   106,
+   7
+  ]
+ ]
+}
