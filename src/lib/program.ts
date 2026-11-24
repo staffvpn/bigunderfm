@@ -30,6 +30,8 @@ export interface ProgramView {
   slot: { title: string; label?: string; endsAt: string | null } | null
   nextSlot: { title: string; startsAt: string; show?: boolean } | null
   accent?: string | null
+  /** Everyone who has ever opened the app in Telegram. */
+  listenersTotal?: number | null
   items: ProgramItem[]
 }
 

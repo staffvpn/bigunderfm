@@ -1040,9 +1040,12 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
   return (
     <div className="bfm bfm-main">
       <header className="bfm__head">
-        BIGUNDER FM
-        <br />
-        Independent Hip-Hop Radio
+        <span>
+          BIGUNDER FM
+          <br />
+          Independent Hip-Hop Radio
+        </span>
+        {program?.listenersTotal ? <span className="bfm__total">{program.listenersTotal}</span> : null}
       </header>
       <div className="bfm__photo" style={background?.type === 'image' ? { backgroundImage: `url(${background.src})` } : undefined}>
         {background?.type === 'video' && (

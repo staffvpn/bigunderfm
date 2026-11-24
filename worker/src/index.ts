@@ -344,6 +344,16 @@ async function airProblem(env: Env): Promise<string | null> {
   return null
 }
 
+/**
+ * How many people have ever opened the app, shown small on the main screen.
+ * Counted once an hour into a setting, so the air never counts users itself.
+ */
+async function countListeners(env: Env): Promise<void> {
+  await env.DB.prepare(
+    "insert into settings (key, value) values ('listeners_total', (select count(*) from users)) on conflict(key) do update set value = excluded.value",
+  ).run()
+}
+
 async function healthCheck(env: Env): Promise<void> {
   const problem = await airProblem(env)
   const prev = await env.DB.prepare('select value from settings where key = ?').bind(HEALTH_KEY).first<{ value: string }>()
@@ -1461,6 +1471,7 @@ export default {
     ctx.waitUntil(sampleListeners(env))
     ctx.waitUntil(sendDueReminders(env))
     if (new Date().getUTCMinutes() === 7) ctx.waitUntil(purgeTrash(env))
+    if (new Date().getUTCMinutes() === 9) ctx.waitUntil(countListeners(env))
     if (new Date().getUTCMinutes() % 5 === 2) ctx.waitUntil(healthCheck(env))
   },
 }
