@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>BIGUNDER FM — что нашёл бы автопоиск</title>
+<style>
+  :root { --ink: #0a0a0a; --paper: #ffffff; --blue: #1f2bff; --grey: #8a8a90; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Inter Tight", "Inter", -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  header { background: var(--ink); color: var(--paper); padding: 14px 12px 12px; }
+  header h1 { margin: 0; font-size: 26px; line-height: 1; letter-spacing: -0.03em; text-transform: uppercase; }
+  header p { margin: 10px 0 0; font-size: 13px; line-height: 1.35; opacity: 0.75; }
+  nav { display: flex; border-bottom: 1px solid var(--ink); position: sticky; top: 0; background: var(--paper); z-index: 2; }
+  nav button { flex: 1; border: 0; background: none; padding: 14px 4px 12px; font: inherit; font-size: 12px; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; color: var(--grey); }
+  nav button.on { color: var(--ink); box-shadow: inset 0 -3px 0 var(--blue); }
+  .note { padding: 12px; font-size: 12px; line-height: 1.4; color: var(--grey); border-bottom: 1px solid #e6e6e8; }
+  ol { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid #ececee; }
+  li.playing { background: #f2f3ff; }
+  .art { flex: none; width: 58px; height: 58px; background: #ddd center/cover; position: relative; }
+  .art button { position: absolute; inset: 0; border: 0; background: transparent; cursor: pointer; }
+  .art svg { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%); fill: #fff; filter: drop-shadow(0 1px 3px rgba(0,0,0,.6)); }
+  .meta { min-width: 0; flex: 1; }
+  .a { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: var(--grey); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .t { font-size: 17px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; margin-top: 2px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .s { font-size: 11px; color: var(--grey); margin-top: 4px; }
+  .empty, .err { padding: 24px 12px; font-size: 14px; color: var(--grey); }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--ink); color: var(--paper); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); display: none; align-items: center; gap: 10px; }
+  .bar.on { display: flex; }
+  .bar .np { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar button { border: 0; background: var(--blue); color: #fff; font: inherit; font-size: 12px; font-weight: 800; padding: 9px 14px; text-transform: uppercase; }
+  .pad { height: 80px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Автопоиск<br>BIGUNDER FM</h1>
+  <p>Так выглядел бы «Свежак» на этой неделе. Треки найдены прямо сейчас на Audius, отобраны автоматически по жанру, лайкам и длине. Жми на обложку, чтобы послушать.</p>
+</header>
+<nav id="tabs"></nav>
+<div class="note" id="note"></div>
+<ol id="list"><li class="empty">Ищу треки...</li></ol>
+<div class="pad"></div>
+<div class="bar" id="bar"><div class="np" id="np"></div><button type="button" id="stop">Стоп</button></div>
+<audio id="au" preload="none"></audio>
+<script>
+const API = 'https://api.audius.co/v1'
+const APP = 'BIGUNDERFM'
+// Which Audius genres each show would draw from, and what it says about the pick.
+const SHOWS = [
+  { id: 'hh', name: 'Хип-хоп', genres: ['Hip-Hop/Rap'], note: 'Дневная ротация: хип-хоп, который на этой неделе набирает лайки на Audius.' },
+  { id: 'nsc', name: 'No Sleep Club', genres: ['Drum & Bass', 'Techno'], note: 'NO SLEEP CLUB: драм-н-бейс и техно, самое заметное за неделю.' },
+  { id: 'rare', name: 'Rare Shit', genres: ['World', 'Jazz'], note: 'RARE SHIT: world и джаз. Позже к этому добавится Jamendo, там этники больше.' },
+]
+// Filters: whole tracks only, real songs (not beat stores, loops or remixes of famous songs), people already like them.
+const MIN_FAVS = 25
+const MIN_SEC = 100
+const MAX_SEC = 480
+const SKIP = /type beat|\bbeats?\b|instrumental|prod\.|\bfree\b|for sale|\bloop|sample pack|\bdemo\b|remix|\bedit\b|bootleg|\bflip\b|mantra|bollywood|quran|surah|tilawat|nasheed|\bcover\b|\(by |arr\.|_.*_.*_/i
+const PER_SHOW = 15
+
+const cache = {}
+const au = document.getElementById('au')
+let playingId = null
+
+function fmtDur(s) { return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') }
+function clean(s) { return String(s ?? '').replace(/\p{Extended_Pictographic}|\uFE0F/gu, '').trim() }
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])) }
+
+async function trending(genre, time) {
+  const r = await fetch(`${API}/tracks/trending?genre=${encodeURIComponent(genre)}&time=${time}&app_name=${APP}`)
+  if (!r.ok) throw new Error('HTTP ' + r.status)
+  return (await r.json()).data || []
+}
+
+async function pick(show) {
+  if (cache[show.id]) return cache[show.id]
+  // This week's and this month's trending, so a quiet week still fills the list.
+  const lists = await Promise.all(show.genres.flatMap((g) => [trending(g, 'week'), trending(g, 'month')]))
+  const seen = new Set()
+  const out = []
+  // Interleave the genres so one doesn't crowd out the other.
+  for (let i = 0; i < 100; i++) {
+    for (const l of lists) {
+      const t = l[i]
+      if (!t || seen.has(t.id)) continue
+      seen.add(t.id)
+      if (!t.is_streamable || t.stream_conditions || t.duration < MIN_SEC || t.duration > MAX_SEC) continue
+      if ((t.favorite_count || 0) < MIN_FAVS || SKIP.test(t.title)) continue
+      out.push(t)
+    }
+  }
+  return (cache[show.id] = out.slice(0, PER_SHOW))
+}
+
+function render(tracks) {
+  const list = document.getElementById('list')
+  if (!tracks.length) { list.innerHTML = '<li class="empty">На этой неделе ничего не прошло фильтр.</li>'; return }
+  list.innerHTML = tracks.map((t) => {
+    const art = (t.artwork && (t.artwork['480x480'] || t.artwork['150x150'])) || ''
+    return `<li data-id="${esc(t.id)}" class="${t.id === playingId ? 'playing' : ''}">
+      <div class="art" style="background-image:url('${esc(art)}')"><button type="button" aria-label="Слушать"></button><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg></div>
+      <div class="meta"><div class="a">${esc(clean(t.user && t.user.name))}</div><div class="t">${esc(clean(t.title))}</div>
+      <div class="s">${t.genre ? esc(t.genre) + ' · ' : ''}${fmtDur(t.duration)} · ${t.favorite_count} лайков · ${t.play_count} прослушиваний</div></div>
+    </li>`
+  }).join('')
+  list.querySelectorAll('li[data-id] .art button').forEach((b) => {
+    b.addEventListener('click', () => {
+      const li = b.closest('li')
+      const t = tracks.find((x) => x.id === li.dataset.id)
+      play(t)
+    })
+  })
+}
+
+function play(t) {
+  playingId = t.id
+  au.src = `${API}/tracks/${encodeURIComponent(t.id)}/stream?app_name=${APP}`
+  au.play().catch(() => {})
+  document.getElementById('np').textContent = `${t.user && t.user.name} — ${t.title}`
+  document.getElementById('bar').classList.add('on')
+  document.querySelectorAll('li[data-id]').forEach((li) => li.classList.toggle('playing', li.dataset.id === t.id))
+}
+
+document.getElementById('stop').addEventListener('click', () => {
+  au.pause(); playingId = null
+  document.getElementById('bar').classList.remove('on')
+  document.querySelectorAll('li.playing').forEach((li) => li.classList.remove('playing'))
+})
+
+async function open(show) {
+  document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.id === show.id))
+  document.getElementById('note').textContent = show.note
+  document.getElementById('list').innerHTML = '<li class="empty">Ищу треки...</li>'
+  try { render(await pick(show)) } catch (e) {
+    document.getElementById('list').innerHTML = `<li class="err">Audius сейчас не ответил (${esc(e.message)}). Обнови страницу через минуту.</li>`
+  }
+}
+
+const tabs = document.getElementById('tabs')
+tabs.innerHTML = SHOWS.map((s) => `<button type="button" data-id="${s.id}">${s.name}</button>`).join('')
+tabs.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => open(SHOWS.find((s) => s.id === b.dataset.id))))
+open(SHOWS[0])
+</script>
+</body>
+</html>
