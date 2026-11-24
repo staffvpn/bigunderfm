@@ -1040,12 +1040,9 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
   return (
     <div className="bfm bfm-main">
       <header className="bfm__head">
-        <span>
-          BIGUNDER FM
-          <br />
-          Independent Hip-Hop Radio
-        </span>
-        {program?.listenersTotal ? <span className="bfm__total">{program.listenersTotal}</span> : null}
+        BIGUNDER FM
+        <br />
+        Independent Hip-Hop Radio
       </header>
       <div className="bfm__photo" style={background?.type === 'image' ? { backgroundImage: `url(${background.src})` } : undefined}>
         {background?.type === 'video' && (
@@ -1055,11 +1052,19 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
         )}
       </div>
       <div className="bfm__now">
-        <span className="bfm__label">
-          <OnAir />
-          В эфире{airName ? ` · ${airName}` : ''}
-          {isNewTrack ? ' · Новинка' : ''}
-        </span>
+        <div className="bfm__nowline">
+          <span className="bfm__label">
+            <OnAir />
+            В эфире{airName ? ` · ${airName}` : ''}
+            {isNewTrack ? ' · Новинка' : ''}
+          </span>
+          {program?.listenersTotal ? (
+            <span className="bfm__label bfm__with">
+              <i className="bfm__dot" aria-hidden="true" />
+              <b>{program.listenersTotal}</b> с нами
+            </span>
+          ) : null}
+        </div>
         {/* One line each, shrunk to fit: the photo keeps its height whatever the names. */}
         <ScrambleTitle className="bfm__artist" text={nowPlaying?.artist || '—'} min={18} />
         <FitTitle key={nowPlaying?.title ?? ''} className="bfm__title bfm__title--in" text={showConnecting ? 'Подключение...' : (nowPlaying?.title ?? 'Загрузка...')} min={12} />
