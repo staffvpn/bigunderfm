@@ -345,13 +345,16 @@ async function airProblem(env: Env): Promise<string | null> {
 }
 
 /**
- * How many people have ever opened the app, shown small on the main screen.
- * Counted once an hour into a setting, so the air never counts users itself.
+ * The number shown as "с нами" on the main screen: a random 1-500, picked
+ * once an hour by the cron (the owner's call), so the air never computes it.
  */
 async function countListeners(env: Env): Promise<void> {
+  const n = 1 + Math.floor(Math.random() * 500)
   await env.DB.prepare(
-    "insert into settings (key, value) values ('listeners_total', (select count(*) from users)) on conflict(key) do update set value = excluded.value",
-  ).run()
+    "insert into settings (key, value) values ('listeners_total', ?) on conflict(key) do update set value = excluded.value",
+  )
+    .bind(String(n))
+    .run()
 }
 
 async function healthCheck(env: Env): Promise<void> {
