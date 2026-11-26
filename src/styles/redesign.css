@@ -12,7 +12,7 @@
   flex-direction: column;
   background: var(--paper);
   color: var(--ink);
-  font-family: 'Inter Tight', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: 'Labil', 'Onest', 'Inter Tight', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   font-size: 12px;
   font-weight: 500;
   text-transform: uppercase;
@@ -391,7 +391,7 @@
   min-height: 100vh;
   background: #ffffff;
   color: var(--ink);
-  font-family: 'Inter Tight', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: 'Labil', 'Onest', 'Inter Tight', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   text-transform: uppercase;
   padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
 }
@@ -585,7 +585,7 @@
 .app__admin-nav {
   background: #0a0a0a;
   border-top: 0;
-  font-family: 'Inter Tight', sans-serif;
+  font-family: 'Labil', 'Onest', 'Inter Tight', sans-serif;
 }
 .app__admin-nav button {
   color: #b8b8b8;
