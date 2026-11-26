@@ -11,6 +11,7 @@ import { ShowCountdown } from '../components/ShowCountdown'
 import { PauseIcon, PlayIcon } from '../components/Icons'
 import { Socials } from '../components/Socials'
 import { Snow } from '../components/Snow'
+import { CrookedText } from '../components/CrookedText'
 import { fetchPlaylist, fetchUpNextFilePath, toPlaylistTracks, type PlaylistEntry } from '../lib/tracks'
 import { afterItem, fetchProgram, isLeftBehind, stationNow, tuneIn, type Program, type ProgramItem, type TuneIn } from '../lib/program'
 
@@ -1042,7 +1043,7 @@ export function RadioScreen({ onOpenGrid }: { onOpenGrid: () => void }) {
   return (
     <div className="bfm bfm-main">
       <header className="bfm__head">
-        BIGUNDER FM
+        <CrookedText text="BIGUNDER FM" tilt={7} lift={0.07} />
         <br />
         Independent Hip-Hop Radio
       </header>
